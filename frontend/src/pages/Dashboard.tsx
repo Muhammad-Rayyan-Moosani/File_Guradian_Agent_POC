@@ -2,7 +2,6 @@ import { Link } from "react-router-dom";
 import {
   FileCheck2,
   FileX2,
-  FolderOpen,
   Activity,
   Filter,
   ChevronRight,
@@ -10,19 +9,22 @@ import {
   MailX,
   Send,
   Clock,
+  Loader2,
+  AlertCircle,
+  RefreshCw,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "../components/Topbar";
 import { StatCard } from "../components/StatCard";
 import { StatusBadge } from "../components/StatusBadge";
-import { mockRuns } from "../data/mockData";
+import { api } from "../lib/api";
 import {
   formatDateTime,
   formatDuration,
   formatKb,
   formatRelative,
 } from "../lib/format";
-import type { RunStatus } from "../types";
+import type { RunStatus, ValidationRun } from "../types";
 
 const filterOptions: { value: RunStatus | "all"; label: string }[] = [
   { value: "all", label: "All" },
@@ -35,23 +37,36 @@ const filterOptions: { value: RunStatus | "all"; label: string }[] = [
 
 export function Dashboard() {
   const [filter, setFilter] = useState<RunStatus | "all">("all");
+  const [runs, setRuns] = useState<ValidationRun[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  function loadRuns() {
+    setLoading(true);
+    setError(null);
+    api
+      .listRuns()
+      .then(setRuns)
+      .catch((e: Error) => setError(e.message))
+      .finally(() => setLoading(false));
+  }
+
+  useEffect(loadRuns, []);
 
   const stats = useMemo(() => {
-    const total = mockRuns.length;
-    const passed = mockRuns.filter((r) => r.status === "passed").length;
-    const failed = mockRuns.filter(
+    const total = runs.length;
+    const passed = runs.filter((r) => r.status === "passed").length;
+    const failed = runs.filter(
       (r) => r.status === "failed" || r.status === "quarantined"
     ).length;
-    const processing = mockRuns.filter(
-      (r) => r.status === "processing"
-    ).length;
+    const processing = runs.filter((r) => r.status === "processing").length;
     return { total, passed, failed, processing };
-  }, []);
+  }, [runs]);
 
   const filtered = useMemo(() => {
-    if (filter === "all") return mockRuns;
-    return mockRuns.filter((r) => r.status === filter);
-  }, [filter]);
+    if (filter === "all") return runs;
+    return runs.filter((r) => r.status === filter);
+  }, [filter, runs]);
 
   return (
     <>
@@ -59,9 +74,12 @@ export function Dashboard() {
         title="Dashboard"
         subtitle="Recent file validation runs"
         actions={
-          <button className="hidden md:inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors">
-            <FolderOpen className="h-4 w-4" />
-            Open inbound folder
+          <button
+            onClick={loadRuns}
+            className="hidden md:inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
+            Refresh
           </button>
         }
       />
@@ -107,7 +125,7 @@ export function Dashboard() {
                 Recent validation runs
               </h2>
               <p className="text-xs text-slate-500">
-                Last {mockRuns.length} files processed by the agent workflow
+                Last {runs.length} files processed by the agent workflow
               </p>
             </div>
             <div className="flex items-center gap-2">
@@ -217,11 +235,33 @@ export function Dashboard() {
                   </tr>
                 ))}
 
-                {filtered.length === 0 ? (
+                {loading && runs.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="px-5 py-12 text-center">
+                      <Loader2 className="mx-auto h-5 w-5 animate-spin text-slate-400" />
+                      <p className="mt-2 text-sm text-slate-500">
+                        Loading runs…
+                      </p>
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={9} className="px-5 py-12 text-center">
+                      <AlertCircle className="mx-auto h-5 w-5 text-rose-500" />
+                      <p className="mt-2 text-sm text-rose-700">{error}</p>
+                      <p className="text-xs text-rose-600">
+                        Is the backend running on{" "}
+                        <code>http://127.0.0.1:5000</code>?
+                      </p>
+                    </td>
+                  </tr>
+                ) : filtered.length === 0 ? (
                   <tr>
                     <td colSpan={9} className="px-5 py-12 text-center">
                       <p className="text-sm text-slate-500">
-                        No runs match this filter.
+                        {runs.length === 0
+                          ? "No validation runs yet — drop a file in a watched folder."
+                          : "No runs match this filter."}
                       </p>
                     </td>
                   </tr>

@@ -30,6 +30,10 @@ supabase: Client = create_client(SUPABASE_URL, SERVICE_ROLE_KEY)
 app = Flask(__name__)
 CORS(app)
 
+# Mount the read-only runs endpoints (/api/runs, /api/runs/<id>)
+from api.runs import runs_bp  # noqa: E402
+app.register_blueprint(runs_bp)
+
 
 # ─── helpers ───────────────────────────────────────────────────────────────
 

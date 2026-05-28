@@ -9,9 +9,10 @@ from supabase import create_client, Client
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 
-# Let us import logging_setup from backend/
+# Let us import logging_setup + the pipeline from backend/
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
+from pipeline import run_pipeline  # noqa: E402
 
 log = get_logger("Monitor")
 
@@ -26,7 +27,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 file_data: dict = {}
 
 
-def get_active_inbound_paths() -> list[str]:
+def get_active_inbound_paths():
     """Return the unique inbound folders for every active profile."""
     rows = (
         supabase.table("validation_profiles")
@@ -65,13 +66,20 @@ class FileHandler(FileSystemEventHandler):
             log.warning("File gone before we could read it: %s", path)
             return
 
-        file_data[path] = {
+        info = {
             "file_path": path,
             "file_type": os.path.splitext(path)[1].lower(),
             "received_at": now.isoformat(),
             "file_size": size,
         }
+        file_data[path] = info
         log.info("New file: %s (%d bytes)", path, size)
+
+        # Hand the file off to the pipeline (Intake -> Test -> route -> finalize)
+        try:
+            run_pipeline(info)
+        except Exception:
+            log.exception("Pipeline failed for %s", path)
 
 
 def start_monitoring(paths: list[str]) -> None:

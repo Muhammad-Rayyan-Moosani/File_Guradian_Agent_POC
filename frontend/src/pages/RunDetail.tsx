@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   ArrowLeft,
@@ -9,17 +10,45 @@ import {
   Download,
   ChevronRight,
   Bot,
+  Loader2,
 } from "lucide-react";
 import { Topbar } from "../components/Topbar";
 import { StatusBadge } from "../components/StatusBadge";
-import { mockRuns } from "../data/mockData";
+import { api } from "../lib/api";
 import { formatDateTime, formatDuration, formatKb } from "../lib/format";
+import type { ValidationRun } from "../types";
 
 export function RunDetail() {
   const { id } = useParams();
-  const run = mockRuns.find((r) => r.id === id);
+  const [run, setRun] = useState<ValidationRun | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  if (!run) {
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    api
+      .getRun(id)
+      .then((r) => !cancelled && setRun(r))
+      .catch((e: Error) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  if (loading) {
+    return (
+      <>
+        <Topbar title="Loading run…" />
+        <main className="flex-1 px-6 py-12 text-center">
+          <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" />
+        </main>
+      </>
+    );
+  }
+
+  if (error || !run) {
     return (
       <>
         <Topbar title="Run not found" />
@@ -32,7 +61,9 @@ export function RunDetail() {
             Back to dashboard
           </Link>
           <p className="mt-4 text-sm text-slate-500">
-            No validation run with id <code>{id}</code> exists.
+            {error
+              ? `Couldn't load run: ${error}`
+              : `No validation run with id ${id} exists.`}
           </p>
         </main>
       </>

@@ -1,4 +1,4 @@
-import type { ValidationProfile } from "../types";
+import type { ValidationProfile, ValidationRun } from "../types";
 
 const API_BASE = "http://127.0.0.1:5000";
 
@@ -42,4 +42,7 @@ export const api = {
     id: string
   ): Promise<{ id: string; ok: boolean; deleted: boolean }> =>
     request(`/api/profiles/${id}`, { method: "DELETE" }),
+
+  listRuns: (): Promise<ValidationRun[]> => request("/api/runs"),
+  getRun: (id: string): Promise<ValidationRun> => request(`/api/runs/${id}`),
 };
