@@ -1,0 +1,3 @@
+EmployeeId,FullName,Email,Department,Salary,StartDate
+1001,Alice Smith,alice@corp.com,Engineering,120000,2024-01-15
+1002,Bob Jones,bob@corp.com,Sales,85000,2023-06-01

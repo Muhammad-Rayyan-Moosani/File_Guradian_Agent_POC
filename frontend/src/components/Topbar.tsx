@@ -1,4 +1,5 @@
-import { Bell, Search } from "lucide-react";
+import { Bell, Search, Moon, Sun } from "lucide-react";
+import { useTheme } from "../lib/theme";
 
 export function Topbar({
   title,
@@ -9,6 +10,7 @@ export function Topbar({
   subtitle?: string;
   actions?: React.ReactNode;
 }) {
+  const { theme, toggle } = useTheme();
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="flex h-16 items-center gap-4 px-6">
@@ -31,6 +33,20 @@ export function Topbar({
         </div>
 
         {actions}
+
+        <button
+          type="button"
+          onClick={toggle}
+          title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+          aria-label="Toggle dark mode"
+          className="relative rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+        >
+          {theme === "dark" ? (
+            <Sun className="h-5 w-5" />
+          ) : (
+            <Moon className="h-5 w-5" />
+          )}
+        </button>
 
         <button
           type="button"

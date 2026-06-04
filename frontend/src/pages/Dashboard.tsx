@@ -12,6 +12,7 @@ import {
   Loader2,
   AlertCircle,
   RefreshCw,
+  Trash2,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { Topbar } from "../components/Topbar";
@@ -41,17 +42,54 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  function loadRuns() {
-    setLoading(true);
-    setError(null);
+  // Delete-confirm modal state
+  const [confirmDelete, setConfirmDelete] = useState<ValidationRun | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
+  // `silent` lets the background poll refresh the table without flashing the
+  // full-page loader or clobbering an existing error message.
+  function loadRuns(silent = false) {
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
     api
       .listRuns()
-      .then(setRuns)
-      .catch((e: Error) => setError(e.message))
-      .finally(() => setLoading(false));
+      .then((list) => {
+        setRuns(list);
+        setError(null);
+      })
+      .catch((e: Error) => {
+        if (!silent) setError(e.message);
+      })
+      .finally(() => {
+        if (!silent) setLoading(false);
+      });
   }
 
-  useEffect(loadRuns, []);
+  // Load once, then quietly re-poll every few seconds so new runs appear live.
+  useEffect(() => {
+    loadRuns();
+    const timer = setInterval(() => loadRuns(true), 4000);
+    return () => clearInterval(timer);
+  }, []);
+
+  async function handleConfirmDelete() {
+    if (!confirmDelete) return;
+    const id = confirmDelete.id;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.deleteRun(id);
+      setRuns((list) => list.filter((r) => r.id !== id));
+      setConfirmDelete(null);
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeleting(false);
+    }
+  }
 
   const stats = useMemo(() => {
     const total = runs.length;
@@ -75,7 +113,7 @@ export function Dashboard() {
         subtitle="Recent file validation runs"
         actions={
           <button
-            onClick={loadRuns}
+            onClick={() => loadRuns()}
             className="hidden md:inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 transition-colors"
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
@@ -225,12 +263,22 @@ export function Dashboard() {
                       {formatKb(run.fileSizeKb)}
                     </td>
                     <td className="px-5 py-3.5">
-                      <Link
-                        to={`/runs/${run.id}`}
-                        className="inline-flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </Link>
+                      <div className="flex items-center justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setConfirmDelete(run)}
+                          title="Delete run + file"
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                        <Link
+                          to={`/runs/${run.id}`}
+                          className="inline-flex items-center justify-center h-7 w-7 rounded-md text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+                        >
+                          <ChevronRight className="h-4 w-4" />
+                        </Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -251,7 +299,7 @@ export function Dashboard() {
                       <p className="mt-2 text-sm text-rose-700">{error}</p>
                       <p className="text-xs text-rose-600">
                         Is the backend running on{" "}
-                        <code>http://127.0.0.1:5000</code>?
+                        <code>http://127.0.0.1:6500</code>?
                       </p>
                     </td>
                   </tr>
@@ -271,6 +319,71 @@ export function Dashboard() {
           </div>
         </section>
       </main>
+
+      {confirmDelete ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-sm px-4"
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="w-full max-w-md rounded-xl bg-white shadow-2xl border border-slate-200">
+            <div className="p-5 flex items-start gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-rose-50 text-rose-600 flex-shrink-0">
+                <Trash2 className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-base font-semibold text-slate-900">
+                  Delete this run?
+                </h3>
+                <p className="mt-1 text-sm text-slate-600">
+                  This removes{" "}
+                  <span className="font-medium text-slate-900">
+                    {confirmDelete.fileName}
+                  </span>{" "}
+                  from the dashboard <strong>and deletes the actual file</strong>{" "}
+                  from its folder
+                  {confirmDelete.destinationPath
+                    ? ` (${confirmDelete.destinationPath})`
+                    : ""}
+                  .
+                </p>
+                <p className="mt-2 text-xs text-rose-700 inline-flex items-center gap-1">
+                  <AlertCircle className="h-3.5 w-3.5" />
+                  This action cannot be undone.
+                </p>
+                {deleteError ? (
+                  <div className="mt-3 rounded-md bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800">
+                    <strong>Couldn't delete:</strong> {deleteError}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+            <div className="px-5 py-3 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2 rounded-b-xl">
+              <button
+                type="button"
+                onClick={() => {
+                  if (deleting) return;
+                  setConfirmDelete(null);
+                  setDeleteError(null);
+                }}
+                disabled={deleting}
+                className="rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDelete}
+                disabled={deleting}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-rose-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-4 w-4" />
+                {deleting ? "Deleting…" : "Delete run + file"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

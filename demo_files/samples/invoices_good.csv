@@ -1,0 +1,4 @@
+CustomerId,CustomerName,InvoiceNumber,InvoiceDate,Amount,Email,Status
+C100,Acme Corp,INV-1001,2026-05-01,250.00,billing@acme.com,PAID
+C101,Globex,INV-1002,2026-05-02,980.50,ap@globex.com,DUE
+C102,Initech,INV-1003,2026-05-03,49.99,finance@initech.com,PAID

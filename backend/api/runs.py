@@ -1,33 +1,37 @@
 """
-Runs API — read-only endpoints the dashboard reads from.
+Runs API — the read-only endpoints the dashboard reads from.
 
-GET /api/runs        → recent validation runs (list)
-GET /api/runs/<id>   → one run with its issues + agent events
+GET /api/runs        → the most recent validation runs (list)
+GET /api/runs/<id>   → one run together with its issues and agent events
 """
 
+import json
 import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from flask import Blueprint, jsonify
-from supabase import Client, create_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
+import db  # noqa: E402
 
 log = get_logger("Runs API")
-
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
-supabase: Client = create_client(
-    os.getenv("SUPABASE_URL"), os.getenv("SERVICE_ROLE_KEY")
-)
 
 runs_bp = Blueprint("runs", __name__)
 
 
-def to_run(row: dict, issues=None, events=None) -> dict:
-    """Shape a validation_runs row into the frontend's ValidationRun type."""
+def to_run(row, issues=None, events=None):
+    """
+    Convert a validation_runs row into the shape the frontend expects.
+    Parameters: row (dict), issues (list or None), events (list or None).
+    Returns: dict matching the frontend ValidationRun type.
+    """
+    if issues is None:
+        issues = []
+    if events is None:
+        events = []
+
     return {
         "id": row["id"],
         "fileName": row["file_name"],
@@ -43,13 +47,47 @@ def to_run(row: dict, issues=None, events=None) -> dict:
         "notificationStatus": row.get("notification_status") or "not_required",
         "notifiedRecipients": row.get("notified_recipients") or [],
         "destinationPath": row.get("destination_path"),
-        "aiSummary": row.get("ai_summary") or "",
-        "issues": issues if issues is not None else [],
-        "events": events if events is not None else [],
+        "aiSummary": parse_summary(row.get("ai_summary")),
+        "issues": issues,
+        "events": events,
     }
 
 
-def to_issue(row: dict) -> dict:
+def parse_summary(raw):
+    """
+    Turn the stored ai_summary text into a {summary, impact, action} dict.
+    Parameters: raw (str or None) — JSON text, plain text, or empty.
+    Returns: dict with keys summary, impact, action.
+    """
+    empty = {"summary": "", "impact": "", "action": ""}
+    if not raw:
+        return empty
+
+    try:
+        data = json.loads(raw)
+    except (ValueError, TypeError):
+        # Older rows may be plain text — show it as the summary.
+        return {"summary": str(raw), "impact": "", "action": ""}
+
+    if isinstance(data, dict):
+        return {
+            "summary": data.get("summary", ""),
+            "impact": data.get("impact", ""),
+            "action": data.get("action", ""),
+        }
+    return empty
+
+
+# Kept under the old name too, in case anything imports it.
+_parse_summary = parse_summary
+
+
+def to_issue(row):
+    """
+    Convert a run_issues row into the frontend's issue shape.
+    Parameters: row (dict).
+    Returns: dict.
+    """
     return {
         "id": row["id"],
         "rule": row["rule_name"],
@@ -62,7 +100,12 @@ def to_issue(row: dict) -> dict:
     }
 
 
-def to_event(row: dict) -> dict:
+def to_event(row):
+    """
+    Convert an agent_events row into the frontend's event shape.
+    Parameters: row (dict).
+    Returns: dict.
+    """
     return {
         "agent": row["agent"],
         "action": row["action"],
@@ -73,29 +116,74 @@ def to_event(row: dict) -> dict:
 
 @runs_bp.get("/api/runs")
 def list_runs():
+    """
+    Return the 50 most recent runs (without their issues/events).
+    Parameters: none.
+    Returns: JSON list of run dicts.
+    """
     log.info("GET /api/runs")
-    rows = (
-        supabase.table("validation_runs")
-        .select("*").order("received_at", desc=True).limit(50).execute().data or []
-    )
-    return jsonify([to_run(r) for r in rows])
+    rows = db.query_all(
+        "SELECT * FROM validation_runs ORDER BY received_at DESC LIMIT 50")
+
+    runs = []
+    for row in rows:
+        runs.append(to_run(row))
+    return jsonify(runs)
+
+
+@runs_bp.delete("/api/runs/<run_id>")
+def delete_run(run_id):
+    """
+    Delete a run everywhere: the physical file plus the database record.
+    Parameters: run_id (str) from the URL.
+    Returns: JSON {id, ok, file_deleted}, or a 404 error.
+    """
+    log.info("DELETE /api/runs/%s", run_id)
+    row = db.query_one(
+        "SELECT destination_path FROM validation_runs WHERE id = ?", (run_id,))
+    if not row:
+        return jsonify({"error": "Run not found"}), 404
+
+    # Delete the actual file from wherever it was routed.
+    file_deleted = False
+    dest = row.get("destination_path")
+    if dest and os.path.isfile(dest):
+        try:
+            os.remove(dest)
+            file_deleted = True
+            log.info("Deleted file %s", dest)
+        except OSError:
+            log.exception("Could not delete file %s", dest)
+
+    # Delete the run row; its issues and events are removed by cascade.
+    db.delete_where("validation_runs", "id", run_id)
+    return jsonify({"id": run_id, "ok": True, "file_deleted": file_deleted})
 
 
 @runs_bp.get("/api/runs/<run_id>")
 def get_run(run_id):
+    """
+    Return one run together with its issues and agent events.
+    Parameters: run_id (str) from the URL.
+    Returns: JSON run dict, or a 404 error.
+    """
     log.info("GET /api/runs/%s", run_id)
-    rows = (
-        supabase.table("validation_runs")
-        .select("*").eq("id", run_id).limit(1).execute().data
-    )
-    if not rows:
+    run = db.query_one("SELECT * FROM validation_runs WHERE id = ?", (run_id,))
+    if not run:
         return jsonify({"error": "Run not found"}), 404
 
-    issues = (
-        supabase.table("run_issues").select("*").eq("run_id", run_id).execute().data or []
-    )
-    events = (
-        supabase.table("agent_events")
-        .select("*").eq("run_id", run_id).order("occurred_at").execute().data or []
-    )
-    return jsonify(to_run(rows[0], [to_issue(i) for i in issues], [to_event(e) for e in events]))
+    issue_rows = db.query_all(
+        "SELECT * FROM run_issues WHERE run_id = ?", (run_id,))
+    event_rows = db.query_all(
+        "SELECT * FROM agent_events WHERE run_id = ? ORDER BY occurred_at",
+        (run_id,))
+
+    issues = []
+    for row in issue_rows:
+        issues.append(to_issue(row))
+
+    events = []
+    for row in event_rows:
+        events.append(to_event(row))
+
+    return jsonify(to_run(run, issues, events))

@@ -4,5 +4,19 @@ backend/venv/
 backend/logs/
 backend/**/__pycache__/
 backend/**/*.pyc
+__pycache__/
+*.pyc
 frontend/node_modules/
 frontend/dist/
+
+# Local SQLite database (created at runtime; WAL/SHM are its side files)
+backend/file_guardian.db
+backend/file_guardian.db-wal
+backend/file_guardian.db-shm
+
+# macOS junk
+.DS_Store
+**/.DS_Store
+
+# Stray folder accidentally created from a literal Windows path string
+backend/C:*

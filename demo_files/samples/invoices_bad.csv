@@ -1,0 +1,4 @@
+CustomerId,CustomerName,InvoiceNumber,InvoiceDate,Amount,Email,Status
+C200,Wayne Ent,INV-2001,2026-05-04,-50.00,bad@@wayne,PAID
+,Stark Industries,INV-2001,not-a-date,0.00,info@stark.com,SHIPPED
+C202,Oscorp,INVALID99,2026-05-06,120.00,procure@oscorp.com,DUE

@@ -16,11 +16,12 @@ import { Topbar } from "../components/Topbar";
 import { StatusBadge } from "../components/StatusBadge";
 import { api } from "../lib/api";
 import { formatDateTime, formatDuration, formatKb } from "../lib/format";
-import type { ValidationRun } from "../types";
+import type { ValidationProfile, ValidationRun } from "../types";
 
 export function RunDetail() {
   const { id } = useParams();
   const [run, setRun] = useState<ValidationRun | null>(null);
+  const [profile, setProfile] = useState<ValidationProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -29,7 +30,17 @@ export function RunDetail() {
     let cancelled = false;
     api
       .getRun(id)
-      .then((r) => !cancelled && setRun(r))
+      .then((r) => {
+        if (cancelled) return;
+        setRun(r);
+        // Also load the profile so the report can list every check performed.
+        if (r.profileId && r.profileId !== "—") {
+          api
+            .getProfile(r.profileId)
+            .then((p) => !cancelled && setProfile(p))
+            .catch(() => {}); // report still works without it
+        }
+      })
       .catch((e: Error) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
     return () => {
@@ -73,13 +84,27 @@ export function RunDetail() {
   const errors = run.issues.filter((i) => i.severity === "error");
   const warnings = run.issues.filter((i) => i.severity === "warning");
 
+  function downloadReport(current: ValidationRun) {
+    const html = buildReportHtml(current, profile);
+    const blob = new Blob([html], { type: "text/html" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `validation-report-${current.fileName}.html`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <>
       <Topbar
         title={run.fileName}
         subtitle={`Run ${run.id} · ${run.profileName}`}
         actions={
-          <button className="hidden md:inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50">
+          <button
+            onClick={() => downloadReport(run)}
+            className="hidden md:inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3.5 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
             <Download className="h-4 w-4" />
             Download report
           </button>
@@ -148,8 +173,30 @@ export function RunDetail() {
                 </span>
               </div>
               <p className="text-sm leading-relaxed text-slate-700">
-                {run.aiSummary}
+                {run.aiSummary.summary || "No summary available."}
               </p>
+
+              {run.aiSummary.impact ? (
+                <div className="mt-4">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                    Likely impact
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-700">
+                    {run.aiSummary.impact}
+                  </p>
+                </div>
+              ) : null}
+
+              {run.aiSummary.action ? (
+                <div className="mt-4 rounded-lg bg-amber-50 border border-amber-100 px-3 py-2.5">
+                  <div className="text-[11px] font-medium uppercase tracking-wider text-amber-700">
+                    Recommended action
+                  </div>
+                  <p className="mt-1 text-sm leading-relaxed text-amber-900">
+                    {run.aiSummary.action}
+                  </p>
+                </div>
+              ) : null}
             </section>
 
             {/* Issues */}
@@ -307,4 +354,161 @@ function Meta({
       </div>
     </div>
   );
+}
+
+function buildReportHtml(
+  run: ValidationRun,
+  profile: ValidationProfile | null
+): string {
+  const esc = (s: unknown) =>
+    String(s ?? "").replace(/[&<>]/g, (c) =>
+      c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"
+    );
+
+  // Build the full list of checks the profile defines, and mark each one
+  // passed or failed by looking for a matching issue.
+  const checks = listChecks(profile);
+  for (const check of checks) {
+    check.failed = run.issues.some(
+      (i) =>
+        i.constraintKind === check.kind &&
+        (check.column === "" || i.columnName === check.column)
+    );
+  }
+  const passedCount = checks.filter((c) => !c.failed).length;
+  const failedCount = checks.filter((c) => c.failed).length;
+
+  const checkRows = checks
+    .map(
+      (c) => `<tr>
+        <td>${esc(c.label)}</td>
+        <td>${c.failed ? "FAIL" : "PASS"}</td>
+      </tr>`
+    )
+    .join("");
+
+  const issueRows = run.issues
+    .map(
+      (i) => `<tr>
+        <td>${esc(i.severity)}</td>
+        <td>${esc(i.rule)}</td>
+        <td>${esc(i.message)}</td>
+        <td>${esc(i.location ?? "")}</td>
+      </tr>`
+    )
+    .join("");
+
+  const eventRows = run.events
+    .map(
+      (e) => `<tr>
+        <td>${esc(e.agent)}</td>
+        <td>${esc(e.action)}</td>
+        <td>${esc(e.detail ?? "")}</td>
+        <td>${esc(formatDateTime(e.timestamp))}</td>
+      </tr>`
+    )
+    .join("");
+
+  const s = run.aiSummary;
+
+  return `<!doctype html>
+<html><head><meta charset="utf-8">
+<title>Validation Report — ${esc(run.fileName)}</title>
+<style>
+  body { font-family: Arial, sans-serif; color: #1e293b; max-width: 820px; margin: 40px auto; padding: 0 20px; }
+  h1 { font-size: 22px; } h2 { font-size: 16px; margin-top: 28px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 8px; font-size: 13px; }
+  th, td { border: 1px solid #e2e8f0; padding: 6px 8px; text-align: left; vertical-align: top; }
+  th { background: #f8fafc; }
+  .meta td:first-child { font-weight: bold; width: 180px; }
+  .status { display: inline-block; padding: 2px 10px; border-radius: 999px; font-weight: bold; }
+</style></head>
+<body>
+  <h1>File Guardian — Validation Report</h1>
+  <table class="meta">
+    <tr><td>File</td><td>${esc(run.fileName)}</td></tr>
+    <tr><td>Status</td><td>${esc(run.status.toUpperCase())}</td></tr>
+    <tr><td>Profile</td><td>${esc(run.profileName)}</td></tr>
+    <tr><td>Received</td><td>${esc(formatDateTime(run.receivedAt))}</td></tr>
+    <tr><td>Completed</td><td>${esc(formatDateTime(run.completedAt))}</td></tr>
+    <tr><td>Errors / Warnings</td><td>${run.errorCount} error(s), ${run.warningCount} warning(s)</td></tr>
+    <tr><td>Destination</td><td>${esc(run.destinationPath ?? "")}</td></tr>
+    <tr><td>Notification</td><td>${esc(run.notificationStatus)}</td></tr>
+    <tr><td>Run reference</td><td>${esc(run.id)}</td></tr>
+  </table>
+
+  <h2>Summary</h2>
+  <p>${esc(s.summary) || "No summary available."}</p>
+  ${s.impact ? `<p><strong>Likely impact:</strong> ${esc(s.impact)}</p>` : ""}
+  ${s.action ? `<p><strong>Recommended action:</strong> ${esc(s.action)}</p>` : ""}
+
+  <h2>Checks performed</h2>
+  ${
+    checks.length
+      ? `<p>${checks.length} checks performed · ${passedCount} passed · ${failedCount} failed</p>
+         <table><thead><tr><th>Check</th><th>Result</th></tr></thead><tbody>${checkRows}</tbody></table>`
+      : "<p>Check list unavailable (no profile loaded).</p>"
+  }
+
+  <h2>Issues (${run.issues.length})</h2>
+  ${
+    run.issues.length
+      ? `<table><thead><tr><th>Severity</th><th>Rule</th><th>Message</th><th>Location</th></tr></thead><tbody>${issueRows}</tbody></table>`
+      : "<p>No issues found.</p>"
+  }
+
+  <h2>Agent timeline</h2>
+  ${
+    run.events.length
+      ? `<table><thead><tr><th>Agent</th><th>Action</th><th>Detail</th><th>Time</th></tr></thead><tbody>${eventRows}</tbody></table>`
+      : "<p>No events recorded.</p>"
+  }
+
+  <p style="margin-top:32px; font-size:12px; color:#64748b;">
+    Generated by File Guardian Agent · open this file and print to PDF if needed.
+  </p>
+</body></html>`;
+}
+
+interface ReportCheck {
+  label: string;
+  kind: string;
+  column: string;
+  failed: boolean;
+}
+
+function listChecks(profile: ValidationProfile | null): ReportCheck[] {
+  const checks: ReportCheck[] = [];
+  if (!profile) return checks;
+
+  for (const column of profile.columns) {
+    const c = column.constraints;
+    if (c.required) {
+      checks.push({ label: `${column.name} — present & not blank`, kind: "required", column: column.name, failed: false });
+    }
+    if (c.type) {
+      checks.push({ label: `${column.name} — type is ${c.type}`, kind: "type", column: column.name, failed: false });
+    }
+    if (c.unique) {
+      checks.push({ label: `${column.name} — values are unique`, kind: "unique", column: column.name, failed: false });
+    }
+    if (c.min !== undefined && c.min !== null && c.min !== "") {
+      checks.push({ label: `${column.name} — at least ${c.min}`, kind: "min", column: column.name, failed: false });
+    }
+    if (c.max !== undefined && c.max !== null && c.max !== "") {
+      checks.push({ label: `${column.name} — at most ${c.max}`, kind: "max", column: column.name, failed: false });
+    }
+    if (c.regex) {
+      checks.push({ label: `${column.name} — matches pattern`, kind: "regex", column: column.name, failed: false });
+    }
+    if (c.allowedValues && c.allowedValues.length > 0) {
+      checks.push({ label: `${column.name} — one of the allowed values`, kind: "allowed_values", column: column.name, failed: false });
+    }
+  }
+
+  for (const rule of profile.crossColumnRules) {
+    checks.push({ label: rule.name, kind: "cross", column: rule.leftColumn, failed: false });
+  }
+
+  return checks;
 }

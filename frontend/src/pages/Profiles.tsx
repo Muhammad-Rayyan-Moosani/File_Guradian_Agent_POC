@@ -114,7 +114,7 @@ export function Profiles() {
               <div className="font-medium">Couldn't load profiles</div>
               <div className="text-rose-700 mt-0.5">{error}</div>
               <div className="text-xs text-rose-600 mt-1">
-                Is the Flask backend running on <code>http://127.0.0.1:5000</code>?
+                Is the Flask backend running on <code>http://127.0.0.1:6500</code>?
               </div>
             </div>
           </div>

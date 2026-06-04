@@ -3,36 +3,36 @@ Profiles API — CRUD for validation_profiles + its two child tables.
 Run: python -m api.profiles
 """
 
-import os
 import sys
 from pathlib import Path
 
-from dotenv import load_dotenv
 from flask import Flask, jsonify, request
 from flask_cors import CORS
-from supabase import Client, create_client
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
+import db  # noqa: E402
 
 log = get_logger("Profiles API")
 
-# Load .env from project root
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
-
-SUPABASE_URL = os.getenv("SUPABASE_URL")
-SERVICE_ROLE_KEY = os.getenv("SERVICE_ROLE_KEY")
-if not SUPABASE_URL or not SERVICE_ROLE_KEY:
-    raise RuntimeError("Missing SUPABASE_URL or SERVICE_ROLE_KEY in .env")
-
-supabase: Client = create_client(SUPABASE_URL, SERVICE_ROLE_KEY)
-
 app = Flask(__name__)
-CORS(app)
+# Only allow the local frontend (Vite dev server + production preview) to call
+# the API — not any website the browser happens to visit.
+CORS(app, resources={r"/api/*": {"origins": [
+    "http://localhost:6200", "http://127.0.0.1:6200",
+]}})
+
+# Reject any single uploaded request body larger than 25 MB. (CSV files are
+# dropped into folders, not POSTed, so requests themselves should stay small.)
+app.config["MAX_CONTENT_LENGTH"] = 25 * 1024 * 1024
 
 # Mount the read-only runs endpoints (/api/runs, /api/runs/<id>)
 from api.runs import runs_bp  # noqa: E402
 app.register_blueprint(runs_bp)
+
+# Mount the settings endpoints (/api/settings)
+from api.settings import settings_bp  # noqa: E402
+app.register_blueprint(settings_bp)
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────
@@ -101,32 +101,18 @@ def to_db_cross_rules(profile_id: str, rules: list) -> list[dict]:
 def insert_children(profile_id: str, columns: list, cross_rules: list) -> None:
     col_rows = to_db_columns(profile_id, columns)
     if col_rows:
-        supabase.table("profile_columns").insert(col_rows).execute()
+        db.insert_many("profile_columns", col_rows)
     cross_rows = to_db_cross_rules(profile_id, cross_rules)
     if cross_rows:
-        supabase.table("profile_cross_column_rules").insert(cross_rows).execute()
+        db.insert_many("profile_cross_column_rules", cross_rows)
 
 
-def load_profile(profile_id: str) -> dict | None:
-    """Load a profile row + its children and shape them for the frontend."""
-    rows = (
-        supabase.table("validation_profiles")
-        .select("*").eq("id", profile_id).limit(1).execute().data
-    )
-    if not rows:
-        return None
-    p = rows[0]
-
-    cols = (
-        supabase.table("profile_columns")
-        .select("*").eq("profile_id", profile_id)
-        .order("column_order").execute().data or []
-    )
-    cross = (
-        supabase.table("profile_cross_column_rules")
-        .select("*").eq("profile_id", profile_id).execute().data or []
-    )
-
+def shape_profile(p: dict, cols: list, cross: list) -> dict:
+    """
+    Build the frontend profile shape from a profile row + its children.
+    Parameters: p (profile row), cols (its column rows), cross (its cross rows).
+    Returns: dict in the frontend ValidationProfile shape.
+    """
     return {
         "id": p["id"],
         "name": p["name"],
@@ -170,6 +156,62 @@ def load_profile(profile_id: str) -> dict | None:
     }
 
 
+def group_by_profile(rows: list) -> dict:
+    """
+    Group child rows (columns or cross-rules) into a dict keyed by profile_id.
+    Parameters: rows (list of child rows, each with a profile_id).
+    Returns: dict mapping profile_id -> list of its rows.
+    """
+    grouped = {}
+    for row in rows:
+        grouped.setdefault(row["profile_id"], []).append(row)
+    return grouped
+
+
+def load_profile(profile_id: str) -> dict | None:
+    """Load one profile row + its children and shape it for the frontend."""
+    profile = db.query_one(
+        "SELECT * FROM validation_profiles WHERE id = ?", (profile_id,))
+    if not profile:
+        return None
+
+    cols = db.query_all(
+        "SELECT * FROM profile_columns WHERE profile_id = ? ORDER BY column_order",
+        (profile_id,))
+    cross = db.query_all(
+        "SELECT * FROM profile_cross_column_rules WHERE profile_id = ?",
+        (profile_id,))
+    return shape_profile(profile, cols, cross)
+
+
+def load_all_profiles() -> list:
+    """
+    Load every profile with its children using just three queries total.
+    This replaces the old per-profile loop (which did 3 queries per profile
+    and made the page slow once there were many profiles).
+    Parameters: none.
+    Returns: list of frontend profile dicts, newest first.
+    """
+    profiles = db.query_all(
+        "SELECT * FROM validation_profiles ORDER BY created_at DESC")
+    if not profiles:
+        return []
+
+    # One query for all columns, one for all cross-rules, then group in memory.
+    all_cols = db.query_all("SELECT * FROM profile_columns")
+    all_cross = db.query_all("SELECT * FROM profile_cross_column_rules")
+    cols_by_profile = group_by_profile(all_cols)
+    cross_by_profile = group_by_profile(all_cross)
+
+    shaped = []
+    for p in profiles:
+        cols = cols_by_profile.get(p["id"], [])
+        cols.sort(key=lambda c: c.get("column_order", 0))
+        cross = cross_by_profile.get(p["id"], [])
+        shaped.append(shape_profile(p, cols, cross))
+    return shaped
+
+
 def validate_body(body):
     """Returns an (error_response, status) tuple, or None if OK."""
     if not isinstance(body, dict):
@@ -186,17 +228,13 @@ def validate_body(body):
 
 @app.get("/api/health")
 def health():
-    return jsonify({"ok": True, "supabase_url": SUPABASE_URL})
+    return jsonify({"ok": True, "db_path": db.DB_PATH})
 
 
 @app.get("/api/profiles")
 def list_profiles():
     log.info("GET /api/profiles")
-    rows = (
-        supabase.table("validation_profiles")
-        .select("id").order("created_at", desc=True).execute().data
-    )
-    profiles = [load_profile(r["id"]) for r in rows]
+    profiles = load_all_profiles()
     log.info("Returned %d profile(s)", len(profiles))
     return jsonify(profiles)
 
@@ -219,8 +257,8 @@ def create_profile():
         return err
 
     try:
-        inserted = supabase.table("validation_profiles").insert(to_db_profile(body)).execute()
-        profile_id = inserted.data[0]["id"]
+        inserted = db.insert("validation_profiles", to_db_profile(body))
+        profile_id = inserted["id"]
     except Exception as e:
         log.exception("Insert failed")
         return jsonify({"error": "Failed to insert profile", "detail": str(e)}), 500
@@ -229,7 +267,7 @@ def create_profile():
         insert_children(profile_id, body["columns"], body.get("crossColumnRules") or [])
     except Exception as e:
         # Cascade delete cleans up any half-saved children
-        supabase.table("validation_profiles").delete().eq("id", profile_id).execute()
+        db.delete_where("validation_profiles", "id", profile_id)
         log.exception("Failed to insert children")
         return jsonify({"error": "Failed to insert profile children", "detail": str(e)}), 500
 
@@ -244,30 +282,30 @@ def update_profile(profile_id):
     if err:
         return err
 
-    existing = (
-        supabase.table("validation_profiles")
-        .select("id").eq("id", profile_id).limit(1).execute().data
-    )
+    existing = db.query_one(
+        "SELECT id FROM validation_profiles WHERE id = ?", (profile_id,))
     if not existing:
         return jsonify({"error": "Profile not found"}), 404
 
     # Snapshot children so we can restore on failure
-    prev_cols = supabase.table("profile_columns").select("*").eq("profile_id", profile_id).execute().data or []
-    prev_cross = supabase.table("profile_cross_column_rules").select("*").eq("profile_id", profile_id).execute().data or []
+    prev_cols = db.query_all(
+        "SELECT * FROM profile_columns WHERE profile_id = ?", (profile_id,))
+    prev_cross = db.query_all(
+        "SELECT * FROM profile_cross_column_rules WHERE profile_id = ?", (profile_id,))
 
     try:
-        supabase.table("validation_profiles").update(to_db_profile(body)).eq("id", profile_id).execute()
-        supabase.table("profile_columns").delete().eq("profile_id", profile_id).execute()
-        supabase.table("profile_cross_column_rules").delete().eq("profile_id", profile_id).execute()
+        db.update("validation_profiles", profile_id, to_db_profile(body))
+        db.delete_where("profile_columns", "profile_id", profile_id)
+        db.delete_where("profile_cross_column_rules", "profile_id", profile_id)
         insert_children(profile_id, body["columns"], body.get("crossColumnRules") or [])
     except Exception as e:
         log.exception("Update failed, restoring previous children")
-        supabase.table("profile_columns").delete().eq("profile_id", profile_id).execute()
-        supabase.table("profile_cross_column_rules").delete().eq("profile_id", profile_id).execute()
+        db.delete_where("profile_columns", "profile_id", profile_id)
+        db.delete_where("profile_cross_column_rules", "profile_id", profile_id)
         if prev_cols:
-            supabase.table("profile_columns").insert(prev_cols).execute()
+            db.insert_many("profile_columns", prev_cols)
         if prev_cross:
-            supabase.table("profile_cross_column_rules").insert(prev_cross).execute()
+            db.insert_many("profile_cross_column_rules", prev_cross)
         return jsonify({"error": "Failed to update profile", "detail": str(e)}), 500
 
     return jsonify(load_profile(profile_id))
@@ -276,16 +314,17 @@ def update_profile(profile_id):
 @app.delete("/api/profiles/<profile_id>")
 def delete_profile(profile_id):
     log.info("DELETE /api/profiles/%s", profile_id)
-    existing = (
-        supabase.table("validation_profiles")
-        .select("id").eq("id", profile_id).limit(1).execute().data
-    )
+    existing = db.query_one(
+        "SELECT id FROM validation_profiles WHERE id = ?", (profile_id,))
     if not existing:
         return jsonify({"error": "Profile not found"}), 404
-    supabase.table("validation_profiles").delete().eq("id", profile_id).execute()
+    db.delete_where("validation_profiles", "id", profile_id)
     return jsonify({"id": profile_id, "ok": True, "deleted": True})
 
 
 if __name__ == "__main__":
-    log.info("Starting Profiles API on http://127.0.0.1:5000")
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    # Run the API on its own (without the Monitor). The normal way to start
+    # everything is `python app.py`. debug stays off so no second process
+    # spawns and so tracebacks are never exposed.
+    log.info("Starting Profiles API on http://127.0.0.1:6500")
+    app.run(host="127.0.0.1", port=6500, debug=False)

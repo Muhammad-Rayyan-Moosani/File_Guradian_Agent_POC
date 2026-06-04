@@ -1,6 +1,6 @@
-import type { ValidationProfile, ValidationRun } from "../types";
+import type { AppSettings, ValidationProfile, ValidationRun } from "../types";
 
-const API_BASE = "http://127.0.0.1:5000";
+const API_BASE = "http://127.0.0.1:6500";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
@@ -45,4 +45,15 @@ export const api = {
 
   listRuns: (): Promise<ValidationRun[]> => request("/api/runs"),
   getRun: (id: string): Promise<ValidationRun> => request(`/api/runs/${id}`),
+  deleteRun: (
+    id: string
+  ): Promise<{ id: string; ok: boolean; file_deleted: boolean }> =>
+    request(`/api/runs/${id}`, { method: "DELETE" }),
+
+  getSettings: (): Promise<AppSettings> => request("/api/settings"),
+  updateSettings: (settings: AppSettings): Promise<AppSettings> =>
+    request("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
 };

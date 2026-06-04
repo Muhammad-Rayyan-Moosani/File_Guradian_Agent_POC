@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FolderCheck,
   FolderX,
@@ -9,17 +9,64 @@ import {
   X,
   Plus,
   Clock,
+  Loader2,
+  CheckCircle2,
 } from "lucide-react";
 import { Topbar } from "../components/Topbar";
-import { mockSettings } from "../data/mockData";
+import { api } from "../lib/api";
 import type { AppSettings } from "../types";
 
+const EMPTY_SETTINGS: AppSettings = {
+  processedFolder: "",
+  quarantineFolder: "",
+  reviewFolder: "",
+  pollIntervalSeconds: 5,
+  notificationChannel: "email",
+  smtpHost: "",
+  smtpPort: 587,
+  smtpFrom: "",
+  teamsWebhookUrl: "",
+  defaultRecipients: [],
+};
+
 export function Settings() {
-  const [settings, setSettings] = useState<AppSettings>(mockSettings);
+  const [settings, setSettings] = useState<AppSettings>(EMPTY_SETTINGS);
   const [newRecipient, setNewRecipient] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    api
+      .getSettings()
+      .then((s) => !cancelled && setSettings(s))
+      .catch((e: Error) => !cancelled && setError(e.message))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setSettings((s) => ({ ...s, [key]: value }));
+    setSaved(false);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    setError(null);
+    setSaved(false);
+    try {
+      const updated = await api.updateSettings(settings);
+      setSettings(updated);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSaving(false);
+    }
   }
 
   function addRecipient() {
@@ -45,14 +92,25 @@ export function Settings() {
         title="Settings"
         subtitle="Configure folder paths and notifications"
         actions={
-          <button className="hidden md:inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700">
+          <button
+            onClick={handleSave}
+            disabled={saving || loading}
+            className="hidden md:inline-flex items-center gap-2 rounded-lg bg-brand-600 px-3.5 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Save className="h-4 w-4" />
-            Save changes
+            {saving ? "Saving…" : "Save changes"}
           </button>
         }
       />
 
       <main className="flex-1 px-6 py-6 max-w-4xl space-y-6">
+        {loading ? (
+          <div className="rounded-xl border border-slate-200 bg-white p-12 text-center shadow-card">
+            <Loader2 className="mx-auto h-6 w-6 animate-spin text-slate-400" />
+            <p className="mt-2 text-sm text-slate-500">Loading settings…</p>
+          </div>
+        ) : (
+        <>
         {/* Default destination folders */}
         <section className="rounded-xl border border-slate-200 bg-white shadow-card overflow-hidden">
           <div className="px-6 py-4 border-b border-slate-200">
@@ -274,12 +332,27 @@ export function Settings() {
           </div>
         </section>
 
-        <div className="flex justify-end">
-          <button className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700">
+        <div className="flex items-center justify-end gap-3">
+          {error ? (
+            <span className="text-sm text-rose-700">{error}</span>
+          ) : null}
+          {saved ? (
+            <span className="inline-flex items-center gap-1.5 text-sm text-emerald-700">
+              <CheckCircle2 className="h-4 w-4" />
+              Saved
+            </span>
+          ) : null}
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="inline-flex items-center gap-2 rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
             <Save className="h-4 w-4" />
-            Save changes
+            {saving ? "Saving…" : "Save changes"}
           </button>
         </div>
+        </>
+        )}
       </main>
     </>
   );

@@ -45,6 +45,12 @@ export interface AgentEvent {
   detail?: string;
 }
 
+export interface AiSummary {
+  summary: string;
+  impact?: string;
+  action?: string;
+}
+
 export interface ValidationRun {
   id: string;
   fileName: string;
@@ -60,7 +66,7 @@ export interface ValidationRun {
   notifiedRecipients?: string[];
   fileSizeKb: number;
   destinationPath?: string;
-  aiSummary: string;
+  aiSummary: AiSummary;
   issues: ValidationIssue[];
   events: AgentEvent[];
 }

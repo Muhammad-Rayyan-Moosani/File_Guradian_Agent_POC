@@ -1,0 +1,3 @@
+PoNumber,VendorId,OrderDate,DeliveryDate,TotalAmount,Currency
+PO-10001,V100,2026-05-01,2026-05-10,5000.00,USD
+PO-10002,V101,2026-05-03,2026-05-12,250.00,EUR

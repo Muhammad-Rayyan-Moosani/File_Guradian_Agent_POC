@@ -1,6 +1,9 @@
 flask
 flask-cors
-supabase
+waitress
 python-dotenv
 watchdog
 pandas
+numpy
+anthropic
+# The database is local SQLite via Python's built-in sqlite3 — no package needed.
