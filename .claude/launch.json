@@ -6,6 +6,12 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["--prefix", "frontend", "run", "dev", "--", "--port", "6299", "--strictPort", "false"],
       "port": 6299
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "/Users/rayyan/Xorbix_FIle_Guardian_Agent/backend/venv/bin/python",
+      "runtimeArgs": ["/Users/rayyan/Xorbix_FIle_Guardian_Agent/backend/app.py"],
+      "port": 6500
     }
   ]
 }

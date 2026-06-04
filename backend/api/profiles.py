@@ -6,7 +6,7 @@ Run: python -m api.profiles
 import sys
 from pathlib import Path
 
-from flask import Flask, jsonify, request
+from flask import Flask, jsonify, request, send_from_directory
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -320,6 +320,47 @@ def delete_profile(profile_id):
         return jsonify({"error": "Profile not found"}), 404
     db.delete_where("validation_profiles", "id", profile_id)
     return jsonify({"id": profile_id, "ok": True, "deleted": True})
+
+
+# ─── frontend (production) ───────────────────────────────────────────────────
+# In production there is no separate Vite server. Flask serves the built React
+# app (frontend/dist) from this same port, so the whole product is one process
+# that can later be bundled into a single Windows .exe. Build it first with
+# `npm run build` in the frontend folder.
+
+FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+
+
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    """
+    Serve the built React app, falling back to index.html for client routes.
+    The /api/* endpoints are handled by their own routes and never reach here.
+    Parameters: path (str) — the part of the URL after the domain.
+    Returns: a static file, the app's index.html, or a small message/404.
+    """
+    # An /api path that reaches this catch-all matched no real endpoint.
+    if path.startswith("api/"):
+        return jsonify({"error": "Not found"}), 404
+
+    # If the app has not been built yet, point the developer at the next step.
+    index_file = FRONTEND_DIST / "index.html"
+    if not index_file.is_file():
+        return (
+            "Frontend is not built yet. Run 'npm run build' in the frontend "
+            "folder, or use the Vite dev server at http://localhost:6200.",
+            200,
+        )
+
+    # Serve a real built file when one exists (e.g. /assets/index-abc123.js).
+    requested = FRONTEND_DIST / path
+    if path and requested.is_file():
+        return send_from_directory(FRONTEND_DIST, path)
+
+    # Otherwise it is a client-side route (e.g. /profiles) — hand back the app
+    # and let React Router show the right page.
+    return send_from_directory(FRONTEND_DIST, "index.html")
 
 
 if __name__ == "__main__":

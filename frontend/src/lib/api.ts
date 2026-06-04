@@ -1,6 +1,10 @@
 import type { AppSettings, ValidationProfile, ValidationRun } from "../types";
 
-const API_BASE = "http://127.0.0.1:6500";
+// Same-origin by default. In production, Flask serves both the UI and the API
+// on one port, so a relative path like "/api/runs" hits the right place no
+// matter which machine opens the app. During development the Vite dev server
+// proxies "/api" to the backend (see vite.config.ts), so this works there too.
+const API_BASE = "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${path}`, {
