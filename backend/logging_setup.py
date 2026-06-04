@@ -22,19 +22,23 @@ this single file.
 
 from __future__ import annotations
 
+import sys
 import logging
 import os
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
+# Make sibling modules (paths) importable even if we are imported first.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import paths  # noqa: E402
+
 # ---------------------------------------------------------------------------
-# Paths
+# Paths — the log folder sits next to the .exe when frozen, else in backend/.
 # ---------------------------------------------------------------------------
-BACKEND_DIR = Path(__file__).resolve().parent
-LOG_DIR = BACKEND_DIR / "logs"
+LOG_DIR = paths.LOGS_DIR
 LOG_FILE = LOG_DIR / "file_guardian.log"
 
-LOG_DIR.mkdir(exist_ok=True)
+LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # ---------------------------------------------------------------------------

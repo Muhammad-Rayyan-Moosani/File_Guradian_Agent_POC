@@ -12,6 +12,7 @@ from flask_cors import CORS
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
 import db  # noqa: E402
+import paths  # noqa: E402
 
 log = get_logger("Profiles API")
 
@@ -328,7 +329,7 @@ def delete_profile(profile_id):
 # that can later be bundled into a single Windows .exe. Build it first with
 # `npm run build` in the frontend folder.
 
-FRONTEND_DIST = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+FRONTEND_DIST = paths.FRONTEND_DIST
 
 
 @app.route("/", defaults={"path": ""})

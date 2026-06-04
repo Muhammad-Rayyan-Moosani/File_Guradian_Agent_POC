@@ -14,6 +14,10 @@ backend/file_guardian.db
 backend/file_guardian.db-wal
 backend/file_guardian.db-shm
 
+# PyInstaller build output (the .spec is tracked; these are generated)
+backend/build/
+backend/dist/
+
 # macOS junk
 .DS_Store
 **/.DS_Store

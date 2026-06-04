@@ -18,19 +18,19 @@ import uuid
 import sqlite3
 from pathlib import Path
 
-# Make logging_setup (in backend/) importable no matter who imports us first.
-BACKEND_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(BACKEND_DIR))
+# Make sibling modules (paths, logging_setup) importable no matter who imports
+# us first.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from logging_setup import get_logger  # noqa: E402
+import paths  # noqa: E402
 
 log = get_logger("DB")
 
-# Where the database file lives. Override with FG_DB_PATH on the server if you
-# want the data to sit somewhere specific (e.g. a dedicated data folder).
-DEFAULT_DB_PATH = BACKEND_DIR / "file_guardian.db"
-DB_PATH = os.getenv("FG_DB_PATH") or str(DEFAULT_DB_PATH)
-
-SCHEMA_PATH = BACKEND_DIR / "schema_sqlite.sql"
+# Where the database file lives and where to find the schema. paths.py figures
+# out the right spot whether we run from source or as a bundled .exe; FG_DB_PATH
+# still overrides the database location.
+DB_PATH = paths.DB_PATH
+SCHEMA_PATH = paths.SCHEMA_PATH
 
 # Columns that hold a list of strings. In Postgres these were TEXT[] arrays;
 # in SQLite we store them as JSON text and decode them back to Python lists

@@ -22,11 +22,13 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
 import db  # noqa: E402
+import paths  # noqa: E402
 
 log = get_logger("Notification")
 
 # SMTP settings still come from the .env file (host, user, password, etc.).
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env")
+# paths.ENV_FILE points next to the .exe when frozen, else at the project root.
+load_dotenv(paths.ENV_FILE)
 
 
 def notify_failure(profile, file_name, status, summary, issues, run_id,

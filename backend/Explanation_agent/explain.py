@@ -17,12 +17,13 @@ from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
+import paths  # noqa: E402
 
 log = get_logger("Explanation")
 
 # override=True so the real key in .env wins even if the shell exports an
-# empty ANTHROPIC_API_KEY.
-load_dotenv(Path(__file__).resolve().parent.parent.parent / ".env", override=True)
+# empty ANTHROPIC_API_KEY. paths.ENV_FILE points next to the .exe when frozen.
+load_dotenv(paths.ENV_FILE, override=True)
 
 
 def explain(meta, issues):
