@@ -18,6 +18,9 @@ backend/file_guardian.db-shm
 backend/build/
 backend/dist/
 
+# Generated test CSVs (the generator script is tracked; the big files aren't)
+demo_files/test_data/
+
 # macOS junk
 .DS_Store
 **/.DS_Store
