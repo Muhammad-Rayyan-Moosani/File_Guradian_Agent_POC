@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
 import db  # noqa: E402
 import paths  # noqa: E402
+import infer_columns  # noqa: E402
 
 log = get_logger("Profiles API")
 
@@ -247,6 +248,40 @@ def get_profile(profile_id):
     if not profile:
         return jsonify({"error": "Profile not found"}), 404
     return jsonify(profile)
+
+
+@app.post("/api/profiles/infer-from-sample")
+def infer_from_sample():
+    """
+    Infer columns from an uploaded sample CSV, optionally AI-enhanced.
+    Reads a multipart 'file'; add ?enhance=true to turn on AI enrichment.
+    Returns: JSON {columns, aiSuggestedColumns, aiUsed, rowCount}.
+    """
+    log.info("POST /api/profiles/infer-from-sample")
+    uploaded = request.files.get("file")
+    if uploaded is None or uploaded.filename == "":
+        return jsonify({"error": "No file uploaded"}), 400
+
+    enhance_flag = request.args.get("enhance", "").lower()
+    want_ai = enhance_flag in ("1", "true", "yes")
+
+    try:
+        result = infer_columns.infer_columns(uploaded.stream)
+    except Exception as e:
+        log.exception("Could not read the sample file")
+        return jsonify({"error": "Could not read the CSV file", "detail": str(e)}), 400
+
+    columns = result["columns"]
+    ai_ids = []
+    if want_ai:
+        columns, ai_ids = infer_columns.enhance_with_ai(columns, result["samples"])
+
+    return jsonify({
+        "columns": columns,
+        "aiSuggestedColumns": ai_ids,
+        "aiUsed": len(ai_ids) > 0,
+        "rowCount": result["row_count"],
+    })
 
 
 @app.post("/api/profiles")

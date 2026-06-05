@@ -80,6 +80,9 @@ export function ProfileEditor() {
   const [mode, setMode] = useState<Mode>("manual");
   const [recipientDraft, setRecipientDraft] = useState("");
   const [aiSuggestedIds, setAiSuggestedIds] = useState<Set<string>>(new Set());
+  const [enhanceWithAi, setEnhanceWithAi] = useState(false);
+  const [inferring, setInferring] = useState(false);
+  const [inferError, setInferError] = useState<string | null>(null);
 
   // When editing, fetch the profile from the API.
   useEffect(() => {
@@ -158,77 +161,30 @@ export function ProfileEditor() {
   }
 
   /**
-   * Mock the "Upload sample CSV → infer columns" flow.
-   * In commit 3 this will POST to /api/profiles/infer-from-sample.
-   * For now, we synthesise a sensible-looking inferred profile so the UI is
-   * testable end-to-end without the backend.
+   * Upload a sample CSV and let the backend infer the columns.
+   * Reads real headers + sample rows; with "Enhance with AI" on, it also asks
+   * for suggested regex / allowed-values. The filename seeds the profile name
+   * and file pattern.
+   * Parameters: file (the chosen CSV File).
+   * Returns: nothing (updates the form state).
    */
-  function handleSampleUpload(file: File) {
-    const sampleColumns: ProfileColumn[] = [
-      {
-        id: `col_${Date.now()}_a`,
-        name: "InvoiceNumber",
-        order: 0,
-        description: "Detected as unique string identifier.",
-        constraints: {
-          required: true,
-          unique: true,
-          type: "string",
-          regex: "^INV-\\d{4,8}$",
-          severity: "error",
-        },
-      },
-      {
-        id: `col_${Date.now()}_b`,
-        name: "CustomerId",
-        order: 1,
-        constraints: { required: true, type: "string", severity: "error" },
-      },
-      {
-        id: `col_${Date.now()}_c`,
-        name: "Amount",
-        order: 2,
-        constraints: {
-          required: true,
-          type: "decimal",
-          min: 0.01,
-          severity: "error",
-        },
-      },
-      {
-        id: `col_${Date.now()}_d`,
-        name: "InvoiceDate",
-        order: 3,
-        constraints: { required: true, type: "date", severity: "error" },
-      },
-      {
-        id: `col_${Date.now()}_e`,
-        name: "Email",
-        order: 4,
-        constraints: { type: "email", severity: "warning" },
-      },
-      {
-        id: `col_${Date.now()}_f`,
-        name: "Status",
-        order: 5,
-        constraints: {
-          type: "string",
-          allowedValues: ["PAID", "DUE", "VOID"],
-          severity: "warning",
-        },
-      },
-    ];
-
-    // Tag the AI-enriched ones (regex on InvoiceNumber, allowedValues on Status)
-    const ai = new Set(sampleColumns.filter((c) => c.constraints.regex || c.constraints.allowedValues).map((c) => c.id));
-
-    setProfile((p) => ({
-      ...p,
-      filePattern: p.filePattern || file.name.replace(/[\d_-]+\..+$/, "_*.csv"),
-      name: p.name || file.name.replace(/\.[^.]+$/, ""),
-      columns: sampleColumns,
-    }));
-    setAiSuggestedIds(ai);
+  async function handleSampleUpload(file: File) {
+    setInferError(null);
+    setInferring(true);
+    try {
+      const result = await api.inferFromSample(file, enhanceWithAi);
+      setProfile((p) => ({
+        ...p,
+        filePattern: p.filePattern || file.name.replace(/[\d_-]+\..+$/, "_*.csv"),
+        name: p.name || file.name.replace(/\.[^.]+$/, ""),
+        columns: result.columns,
+      }));
+      setAiSuggestedIds(new Set(result.aiSuggestedColumns));
+    } catch (e) {
+      setInferError((e as Error).message);
+    } finally {
+      setInferring(false);
+    }
   }
 
   const [saving, setSaving] = useState(false);
@@ -345,7 +301,32 @@ export function ProfileEditor() {
 
         {/* Upload area */}
         {mode === "upload" && !isEditing ? (
-          <UploadDropzone onFile={handleSampleUpload} />
+          <div className="space-y-2">
+            <UploadDropzone onFile={handleSampleUpload} disabled={inferring} />
+            <div className="flex items-center justify-between px-1">
+              <label className="inline-flex items-center gap-2 text-sm text-slate-700 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={enhanceWithAi}
+                  onChange={(e) => setEnhanceWithAi(e.target.checked)}
+                  className="h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                />
+                <Sparkles className="h-3.5 w-3.5 text-violet-500" />
+                Enhance with AI
+                <span className="text-xs text-slate-500">
+                  (suggest regex &amp; allowed values — needs an Anthropic key)
+                </span>
+              </label>
+              {inferring ? (
+                <span className="text-xs text-slate-500">
+                  Analysing sample…
+                </span>
+              ) : null}
+            </div>
+            {inferError ? (
+              <p className="px-1 text-xs text-red-600">{inferError}</p>
+            ) : null}
+          </div>
         ) : null}
 
         {/* Basic metadata */}
@@ -812,23 +793,32 @@ function ModeTab({
   );
 }
 
-function UploadDropzone({ onFile }: { onFile: (file: File) => void }) {
+function UploadDropzone({
+  onFile,
+  disabled = false,
+}: {
+  onFile: (file: File) => void;
+  disabled?: boolean;
+}) {
   const [dragging, setDragging] = useState(false);
   return (
     <section
       onDragOver={(e) => {
         e.preventDefault();
-        setDragging(true);
+        if (!disabled) setDragging(true);
       }}
       onDragLeave={() => setDragging(false)}
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
+        if (disabled) return;
         const f = e.dataTransfer.files?.[0];
         if (f) onFile(f);
       }}
       className={`rounded-xl border-2 border-dashed bg-white p-8 text-center transition-colors ${
-        dragging
+        disabled
+          ? "border-slate-200 opacity-60"
+          : dragging
           ? "border-brand-500 bg-brand-50/40"
           : "border-slate-300 hover:border-slate-400"
       }`}
@@ -837,18 +827,25 @@ function UploadDropzone({ onFile }: { onFile: (file: File) => void }) {
         <FileText className="h-6 w-6" />
       </div>
       <p className="mt-3 text-sm font-medium text-slate-900">
-        Drop a sample CSV here, or click to browse
+        {disabled
+          ? "Reading your sample…"
+          : "Drop a sample CSV here, or click to browse"}
       </p>
       <p className="mt-1 text-xs text-slate-500">
-        We'll infer the columns and suggest constraints (with AI enrichment).
+        We'll read the headers and a sample of rows to infer the columns.
       </p>
-      <label className="mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">
+      <label
+        className={`mt-4 inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 ${
+          disabled ? "cursor-not-allowed opacity-60" : "hover:bg-slate-50 cursor-pointer"
+        }`}
+      >
         <Upload className="h-4 w-4" />
         Choose file…
         <input
           type="file"
           accept=".csv,text/csv"
           className="hidden"
+          disabled={disabled}
           onChange={(e) => {
             const f = e.target.files?.[0];
             if (f) onFile(f);

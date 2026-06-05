@@ -1,4 +1,16 @@
-import type { AppSettings, ValidationProfile, ValidationRun } from "../types";
+import type {
+  AppSettings,
+  ProfileColumn,
+  ValidationProfile,
+  ValidationRun,
+} from "../types";
+
+export interface InferResult {
+  columns: ProfileColumn[];
+  aiSuggestedColumns: string[];
+  aiUsed: boolean;
+  rowCount: number;
+}
 
 // Same-origin by default. In production, Flask serves both the UI and the API
 // on one port, so a relative path like "/api/runs" hits the right place no
@@ -46,6 +58,29 @@ export const api = {
     id: string
   ): Promise<{ id: string; ok: boolean; deleted: boolean }> =>
     request(`/api/profiles/${id}`, { method: "DELETE" }),
+
+  // Upload a sample CSV and get back inferred columns. This is a multipart
+  // upload, so it builds its own request instead of using the JSON helper.
+  inferFromSample: async (
+    file: File,
+    enhanceWithAi: boolean
+  ): Promise<InferResult> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(
+      `${API_BASE}/api/profiles/infer-from-sample?enhance=${enhanceWithAi}`,
+      { method: "POST", body: form }
+    );
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(
+        detail.error
+          ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}`
+          : `${res.status} ${res.statusText}`
+      );
+    }
+    return res.json() as Promise<InferResult>;
+  },
 
   listRuns: (): Promise<ValidationRun[]> => request("/api/runs"),
   getRun: (id: string): Promise<ValidationRun> => request(`/api/runs/${id}`),
