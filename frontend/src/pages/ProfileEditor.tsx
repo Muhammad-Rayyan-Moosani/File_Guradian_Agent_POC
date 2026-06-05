@@ -83,6 +83,9 @@ export function ProfileEditor() {
   const [enhanceWithAi, setEnhanceWithAi] = useState(false);
   const [inferring, setInferring] = useState(false);
   const [inferError, setInferError] = useState<string | null>(null);
+  // The sample file uploaded to build a new profile. After saving, we also run
+  // it through validation so it shows up in the dashboard like a dropped file.
+  const [sampleFile, setSampleFile] = useState<File | null>(null);
 
   // When editing, fetch the profile from the API.
   useEffect(() => {
@@ -180,6 +183,8 @@ export function ProfileEditor() {
         columns: result.columns,
       }));
       setAiSuggestedIds(new Set(result.aiSuggestedColumns));
+      // Remember the file so we can validate it after the profile is saved.
+      setSampleFile(file);
     } catch (e) {
       setInferError((e as Error).message);
     } finally {
@@ -199,6 +204,21 @@ export function ProfileEditor() {
         : await api.createProfile(profile);
       // eslint-disable-next-line no-console
       console.log(isEditing ? "Updated profile:" : "Created profile:", saved);
+
+      // For a brand-new profile created from a sample file, also validate that
+      // file so it lands in the good/quarantine folder and shows in the
+      // dashboard — exactly like a file dropped into the inbound folder.
+      if (!isEditing && sampleFile && saved?.id) {
+        try {
+          await api.validateSample(saved.id, sampleFile);
+          navigate("/");
+          return;
+        } catch (e) {
+          // The profile saved fine; only the sample run failed. Don't block.
+          // eslint-disable-next-line no-console
+          console.warn("Sample validation failed:", e);
+        }
+      }
       navigate("/profiles");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : String(err));

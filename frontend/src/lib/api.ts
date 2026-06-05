@@ -82,6 +82,29 @@ export const api = {
     return res.json() as Promise<InferResult>;
   },
 
+  // Validate an uploaded file against an existing profile and record a run,
+  // exactly as if it had been dropped into the inbound folder. Multipart.
+  validateSample: async (
+    profileId: string,
+    file: File
+  ): Promise<{ runId: string; status: string }> => {
+    const form = new FormData();
+    form.append("file", file);
+    const res = await fetch(
+      `${API_BASE}/api/profiles/${profileId}/validate-sample`,
+      { method: "POST", body: form }
+    );
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      throw new Error(
+        detail.error
+          ? `${detail.error}${detail.detail ? ` — ${detail.detail}` : ""}`
+          : `${res.status} ${res.statusText}`
+      );
+    }
+    return res.json() as Promise<{ runId: string; status: string }>;
+  },
+
   listRuns: (): Promise<ValidationRun[]> => request("/api/runs"),
   getRun: (id: string): Promise<ValidationRun> => request(`/api/runs/${id}`),
   deleteRun: (

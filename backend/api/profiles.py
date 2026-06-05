@@ -3,7 +3,11 @@ Profiles API — CRUD for validation_profiles + its two child tables.
 Run: python -m api.profiles
 """
 
+import os
 import sys
+import shutil
+import tempfile
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, jsonify, request, send_from_directory
@@ -282,6 +286,52 @@ def infer_from_sample():
         "aiUsed": len(ai_ids) > 0,
         "rowCount": result["row_count"],
     })
+
+
+@app.post("/api/profiles/<profile_id>/validate-sample")
+def validate_sample(profile_id):
+    """
+    Validate an uploaded file against an existing profile and record a run —
+    exactly as if the file had been dropped into the profile's inbound folder.
+    Used so the sample file used to create a profile is also processed and shown
+    in the dashboard (moved to the good or quarantine folder).
+    Reads a multipart 'file'. Returns JSON {runId, status}.
+    """
+    log.info("POST /api/profiles/%s/validate-sample", profile_id)
+    profile = db.query_one(
+        "SELECT * FROM validation_profiles WHERE id = ?", (profile_id,))
+    if not profile:
+        return jsonify({"error": "Profile not found"}), 404
+
+    uploaded = request.files.get("file")
+    if uploaded is None or uploaded.filename == "":
+        return jsonify({"error": "No file uploaded"}), 400
+
+    # Save the upload to a temporary folder (NOT a watched inbound folder, so the
+    # Monitor doesn't also pick it up). The pipeline moves it to the good or
+    # quarantine folder, leaving this temp folder empty.
+    staging_dir = tempfile.mkdtemp(prefix="fg_upload_")
+    file_name = os.path.basename(uploaded.filename)
+    staging_path = os.path.join(staging_dir, file_name)
+    uploaded.save(staging_path)
+
+    file_info = {
+        "file_path": staging_path,
+        "file_type": os.path.splitext(file_name)[1].lower(),
+        "received_at": datetime.now().isoformat(),
+        "file_size": os.path.getsize(staging_path),
+    }
+
+    try:
+        from pipeline import run_pipeline_for_profile
+        result = run_pipeline_for_profile(file_info, profile)
+    except Exception as e:
+        log.exception("Could not validate the uploaded sample")
+        return jsonify({"error": "Could not validate the file", "detail": str(e)}), 500
+    finally:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+
+    return jsonify({"runId": result["run_id"], "status": result["status"]})
 
 
 @app.post("/api/profiles")

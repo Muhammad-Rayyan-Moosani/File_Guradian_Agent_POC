@@ -17,7 +17,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from logging_setup import get_logger
 import db
-from Intake_agent.initial_check import intake_file, move_file, with_retries
+from Intake_agent.initial_check import intake_file, create_run, move_file, with_retries
 from Test_agent.validator import validate_file
 from Explanation_agent.explain import explain
 from Notification_agent.notify import notify_failure
@@ -251,6 +251,18 @@ def run_pipeline(file_info):
 
     log_event(run_id, "Intake", "Matched profile", profile["name"])
 
+    return run_checks(run_id, profile, file_info, file_path, file_name)
+
+
+def run_checks(run_id, profile, file_info, file_path, file_name):
+    """
+    Load the rules, validate the file, then route and finalize the run.
+    This is the shared core used by both the folder Monitor and the direct
+    upload path, so both behave identically once the profile is known.
+    Parameters: run_id (str), profile (dict), file_info (dict),
+        file_path (str), file_name (str).
+    Returns: dict summary {"run_id", "status", "issues"}.
+    """
     # 2. Test — load the rules for this profile.
     columns, cross_rules = load_rules(profile["id"])
     log_event(run_id, "Planning", "Loaded validation rules",
@@ -295,3 +307,32 @@ def run_pipeline(file_info):
         status = "passed"
     return complete_run(run_id, profile, file_path, file_name, status,
                         issues, errors, warnings, total_rows)
+
+
+def run_pipeline_for_profile(file_info, profile):
+    """
+    Validate a file against a profile we already know, instead of matching it by
+    folder + name. Used when a file is uploaded straight from the UI (e.g. the
+    sample used to create a profile) rather than dropped into a watched folder.
+    The outcome is identical to the normal flow: a run is recorded and the file
+    is moved to the profile's good or quarantine folder.
+    Parameters: file_info (dict with file_path), profile (dict, a profile row).
+    Returns: dict summary {"run_id", "status", "issues"}.
+    """
+    file_path = file_info["file_path"]
+    file_name = os.path.basename(file_path)
+
+    run_id = create_run(file_info, profile, "processing")
+
+    file_type = file_info.get("file_type") or os.path.splitext(file_name)[1].lower()
+    detected_detail = (
+        f"name={file_name}; "
+        f"type={file_type}; "
+        f"size={file_info.get('file_size')} bytes; "
+        f"path={file_path}; "
+        f"received={file_info.get('received_at')}"
+    )
+    log_event(run_id, "Monitor", "File uploaded", detected_detail)
+    log_event(run_id, "Intake", "Matched profile", profile["name"])
+
+    return run_checks(run_id, profile, file_info, file_path, file_name)
