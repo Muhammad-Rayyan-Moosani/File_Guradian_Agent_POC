@@ -2,8 +2,8 @@
 REM ============================================================================
 REM  Build the File Guardian Agent into ONE self-contained Windows .exe.
 REM
-REM  Run this from the repo ROOT on the Windows build machine:
-REM      backend\build_windows.bat
+REM  Run it from anywhere — it jumps to the repo root itself:
+REM      backend\build_windows.bat   (or .\build_windows.bat from inside backend)
 REM
 REM  Prerequisites (BUILD machine only):
 REM      - Python 3.13  (https://www.python.org/downloads/)
@@ -11,6 +11,10 @@ REM      - Node.js      (https://nodejs.org/)  -- only to compile the web UI
 REM  The finished .exe needs NEITHER installed to RUN on the server.
 REM ============================================================================
 setlocal
+
+REM Move to the repo root (this script lives in backend\, so its parent is root)
+REM so the relative paths below work no matter where it was launched from.
+cd /d "%~dp0.." || goto :error
 
 echo.
 echo [1/4] Building the web UI (React -^> static files)...
