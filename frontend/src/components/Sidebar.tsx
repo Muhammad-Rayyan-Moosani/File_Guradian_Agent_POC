@@ -1,5 +1,5 @@
 import { NavLink } from "react-router-dom";
-import { LayoutDashboard, ShieldCheck, Settings, Shield } from "lucide-react";
+import { LayoutDashboard, ShieldCheck, Settings } from "lucide-react";
 import clsx from "clsx";
 
 const links = [
@@ -12,8 +12,12 @@ export function Sidebar() {
   return (
     <aside className="hidden md:flex md:w-64 md:flex-col md:border-r md:border-slate-200 md:bg-white">
       <div className="flex h-16 items-center gap-2.5 px-6 border-b border-slate-200">
-        <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-brand-600 to-brand-800 text-white shadow-card">
-          <Shield className="h-5 w-5" />
+        <div className="h-9 w-9 overflow-hidden rounded-lg shadow-card">
+          <img
+            src="/logo.png"
+            alt="File Guardian logo"
+            className="h-full w-full object-cover"
+          />
         </div>
         <div className="leading-tight">
           <div className="text-sm font-semibold text-slate-900">

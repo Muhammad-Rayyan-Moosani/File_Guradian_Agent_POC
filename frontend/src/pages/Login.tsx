@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { ShieldCheck, LogIn } from "lucide-react";
+import { LogIn } from "lucide-react";
 import { useAuth } from "../lib/auth";
 
 /**
@@ -29,8 +29,12 @@ export function Login() {
   return (
     <div className="flex min-h-screen items-center justify-center bg-slate-100 px-4">
       <div className="w-full max-w-sm rounded-2xl border border-slate-200 bg-white p-8 shadow-card">
-        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-brand-600 text-white">
-          <ShieldCheck className="h-6 w-6" />
+        <div className="mx-auto h-16 w-16 overflow-hidden rounded-2xl shadow-card ring-1 ring-slate-200">
+          <img
+            src="/logo.png"
+            alt="File Guardian logo"
+            className="h-full w-full object-cover"
+          />
         </div>
         <h1 className="mt-4 text-center text-lg font-semibold text-slate-900">
           File Guardian Agent
