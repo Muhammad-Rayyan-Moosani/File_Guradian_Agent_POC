@@ -5,9 +5,22 @@ import { RunDetail } from "./pages/RunDetail";
 import { Profiles } from "./pages/Profiles";
 import { ProfileEditor } from "./pages/ProfileEditor";
 import { Settings } from "./pages/Settings";
+import { Login } from "./pages/Login";
+import { AuthProvider, useAuth } from "./lib/auth";
 import "./App.css";
 
-function App() {
+// Decides what to show based on login state: nothing while we check, the login
+// screen when a sign-in is required, otherwise the full app.
+function Gate() {
+  const { loading, authEnabled, authenticated } = useAuth();
+
+  if (loading) {
+    return <div className="min-h-screen bg-slate-100" />;
+  }
+  if (authEnabled && !authenticated) {
+    return <Login />;
+  }
+
   return (
     <BrowserRouter>
       <Routes>
@@ -21,6 +34,14 @@ function App() {
         </Route>
       </Routes>
     </BrowserRouter>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Gate />
+    </AuthProvider>
   );
 }
 

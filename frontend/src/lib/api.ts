@@ -12,6 +12,12 @@ export interface InferResult {
   rowCount: number;
 }
 
+export interface AuthStatus {
+  authEnabled: boolean;
+  authenticated: boolean;
+  username?: string | null;
+}
+
 // Same-origin by default. In production, Flask serves both the UI and the API
 // on one port, so a relative path like "/api/runs" hits the right place no
 // matter which machine opens the app. During development the Vite dev server
@@ -27,6 +33,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     },
   });
   if (!res.ok) {
+    // Session expired or not logged in — let the app show the login screen.
+    if (res.status === 401) {
+      window.dispatchEvent(new Event("fg:unauthorized"));
+    }
     const detail = await res.json().catch(() => ({}));
     throw new Error(
       detail.error
@@ -111,6 +121,15 @@ export const api = {
     id: string
   ): Promise<{ id: string; ok: boolean; file_deleted: boolean }> =>
     request(`/api/runs/${id}`, { method: "DELETE" }),
+
+  // ── admin login ──
+  me: (): Promise<AuthStatus> => request("/api/me"),
+  login: (username: string, password: string): Promise<AuthStatus> =>
+    request("/api/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+  logout: (): Promise<AuthStatus> => request("/api/logout", { method: "POST" }),
 
   getSettings: (): Promise<AppSettings> => request("/api/settings"),
   updateSettings: (settings: AppSettings): Promise<AppSettings> =>

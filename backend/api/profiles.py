@@ -5,12 +5,14 @@ Run: python -m api.profiles
 
 import os
 import sys
+import hmac
 import shutil
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from flask import Flask, jsonify, request, send_from_directory
+from dotenv import load_dotenv
+from flask import Flask, jsonify, request, send_from_directory, session
 from flask_cors import CORS
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -21,7 +23,16 @@ import infer_columns  # noqa: E402
 
 log = get_logger("Profiles API")
 
+# Admin login settings come from the .env (next to the .exe when bundled).
+load_dotenv(paths.ENV_FILE)
+
 app = Flask(__name__)
+# Used to sign the login session cookie. Set FG_SECRET_KEY in the .env to keep
+# people logged in across restarts; otherwise a fresh random key is used each
+# start (which simply means everyone has to log in again after a restart).
+app.secret_key = os.getenv("FG_SECRET_KEY") or os.urandom(32)
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 # Only allow the local frontend (Vite dev server + production preview) to call
 # the API — not any website the browser happens to visit.
 CORS(app, resources={r"/api/*": {"origins": [
@@ -39,6 +50,123 @@ app.register_blueprint(runs_bp)
 # Mount the settings endpoints (/api/settings)
 from api.settings import settings_bp  # noqa: E402
 app.register_blueprint(settings_bp)
+
+
+# ─── admin login ─────────────────────────────────────────────────────────────
+# Login is OPT-IN: it only turns on when both ADMIN_USERNAME and ADMIN_PASSWORD
+# are set in the .env. With them unset (e.g. during development), the app stays
+# open exactly as before. Dropping files into the watched folders is never
+# affected — that is the filesystem, not this web app.
+
+# These API paths are always reachable so the login page can work + check state.
+PUBLIC_API_PATHS = {"/api/login", "/api/logout", "/api/me", "/api/health"}
+
+
+def auth_enabled():
+    """
+    Tell whether admin login is switched on (both credentials set in the .env).
+    Parameters: none.
+    Returns: bool.
+    """
+    return bool(os.getenv("ADMIN_USERNAME") and os.getenv("ADMIN_PASSWORD"))
+
+
+def credentials_match(username, password):
+    """
+    Compare a submitted username/password against the .env values safely.
+    Uses a constant-time compare so timing can't leak the real values.
+    Parameters: username (str), password (str).
+    Returns: bool.
+    """
+    expected_user = os.getenv("ADMIN_USERNAME") or ""
+    expected_pass = os.getenv("ADMIN_PASSWORD") or ""
+    user_ok = hmac.compare_digest(username or "", expected_user)
+    pass_ok = hmac.compare_digest(password or "", expected_pass)
+    return user_ok and pass_ok
+
+
+def is_logged_in():
+    """
+    Tell whether the current request is allowed through (logged in, or auth off).
+    Parameters: none.
+    Returns: bool.
+    """
+    if not auth_enabled():
+        return True
+    return bool(session.get("admin"))
+
+
+@app.before_request
+def require_admin_login():
+    """
+    Block API calls that need a login when login is on and nobody is signed in.
+    The static frontend (so the login page can load) and a few public API
+    endpoints are always allowed.
+    Parameters: none (reads the incoming request).
+    Returns: None to allow, or a 401 JSON response to block.
+    """
+    if not auth_enabled():
+        return None
+    if request.method == "OPTIONS":
+        return None
+    path = request.path
+    # Let the frontend's static files load so the login screen can appear.
+    if not path.startswith("/api/"):
+        return None
+    if path in PUBLIC_API_PATHS:
+        return None
+    if session.get("admin"):
+        return None
+    return jsonify({"error": "Authentication required"}), 401
+
+
+@app.get("/api/me")
+def whoami():
+    """
+    Report whether login is required and whether this visitor is signed in.
+    Parameters: none.
+    Returns: JSON {authEnabled, authenticated, username}.
+    """
+    return jsonify({
+        "authEnabled": auth_enabled(),
+        "authenticated": is_logged_in(),
+        "username": session.get("username"),
+    })
+
+
+@app.post("/api/login")
+def login():
+    """
+    Sign an admin in by username + password (checked against the .env).
+    Parameters: none (reads a JSON body {username, password}).
+    Returns: JSON on success, or a 401 error on bad credentials.
+    """
+    if not auth_enabled():
+        # Login is off — nothing to do; everyone is already "in".
+        return jsonify({"authEnabled": False, "authenticated": True})
+
+    body = request.get_json(silent=True) or {}
+    username = body.get("username", "")
+    password = body.get("password", "")
+    if not credentials_match(username, password):
+        log.warning("Failed admin login attempt for user %r", username)
+        return jsonify({"error": "Invalid username or password"}), 401
+
+    session["admin"] = True
+    session["username"] = username
+    log.info("Admin %r logged in", username)
+    return jsonify({"authEnabled": True, "authenticated": True, "username": username})
+
+
+@app.post("/api/logout")
+def logout():
+    """
+    Sign the current admin out by clearing their session.
+    Parameters: none.
+    Returns: JSON {authEnabled, authenticated}.
+    """
+    session.clear()
+    return jsonify({"authEnabled": auth_enabled(), "authenticated": False})
 
 
 # ─── helpers ───────────────────────────────────────────────────────────────

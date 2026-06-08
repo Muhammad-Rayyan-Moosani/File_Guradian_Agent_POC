@@ -1,5 +1,6 @@
-import { Bell, Search, Moon, Sun } from "lucide-react";
+import { Bell, Search, Moon, Sun, LogOut } from "lucide-react";
 import { useTheme } from "../lib/theme";
+import { useAuth } from "../lib/auth";
 
 export function Topbar({
   title,
@@ -11,6 +12,8 @@ export function Topbar({
   actions?: React.ReactNode;
 }) {
   const { theme, toggle } = useTheme();
+  const { authEnabled, authenticated, username, logout } = useAuth();
+  const initials = (username || "RM").slice(0, 2).toUpperCase();
   return (
     <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/80 backdrop-blur">
       <div className="flex h-16 items-center gap-4 px-6">
@@ -56,9 +59,24 @@ export function Topbar({
           <span className="absolute top-1.5 right-1.5 h-2 w-2 rounded-full bg-rose-500 ring-2 ring-white" />
         </button>
 
-        <div className="h-9 w-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-sm font-semibold">
-          RM
+        <div
+          className="h-9 w-9 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center text-white text-sm font-semibold"
+          title={username || undefined}
+        >
+          {initials}
         </div>
+
+        {authEnabled && authenticated ? (
+          <button
+            type="button"
+            onClick={logout}
+            title="Sign out"
+            aria-label="Sign out"
+            className="rounded-lg p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700"
+          >
+            <LogOut className="h-5 w-5" />
+          </button>
+        ) : null}
       </div>
     </header>
   );

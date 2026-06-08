@@ -87,6 +87,27 @@ starts on boot and restarts on crash — is the next step after this.)
 
 ---
 
+## Restricting access (admin login)
+
+By default the dashboard is open to anyone who can reach it on the network. To
+lock it behind a single admin sign-in, set these in the `.env` next to the exe:
+
+```
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=choose-a-strong-password
+FG_SECRET_KEY=any-long-random-string
+```
+
+- Set **both** `ADMIN_USERNAME` and `ADMIN_PASSWORD` to turn login on; leave them
+  blank to keep it open. Restart the app after changing them.
+- `FG_SECRET_KEY` signs the login cookie — set it so people stay logged in across
+  restarts (any long random string).
+- This only gates the **web dashboard**. Dropping files into the watched folders
+  is unaffected — control who can do that with normal Windows folder permissions
+  on the shared inbound folder.
+- Note: this is app-level login for a trusted internal network, not Windows/AD
+  authentication.
+
 ## Good to know
 
 - **Slow first start (~30s).** The one-file build unpacks everything to a temp folder
