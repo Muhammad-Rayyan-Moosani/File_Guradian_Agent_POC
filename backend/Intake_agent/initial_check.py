@@ -92,15 +92,53 @@ def match_profile(folder, file_name):
         return matches[0]
 
     if len(matches) > 1:
+        # Several profiles share this folder and all match this file name. Pick
+        # the most specific pattern (e.g. 'payroll_*.csv' beats a broad '*.csv'),
+        # so one folder can serve many profiles without files going to the wrong
+        # one just because of the order the profiles were created.
         names = []
         for profile in matches:
             names.append(profile["name"])
-        log.warning("More than one profile matches %s (%s) — using the first",
-                    file_name, ", ".join(names))
-        return matches[0]
+        best = most_specific_profile(matches)
+        log.info("Several profiles match %s (%s) — using the most specific: '%s'",
+                 file_name, ", ".join(names), best["name"])
+        return best
 
     log.info("No profile matched %s in %s", file_name, folder)
     return None
+
+
+def pattern_specificity(pattern):
+    """
+    Score how specific a filename pattern is (higher means more specific).
+    Literal characters add to the score; wildcards (* and ?) take away from it,
+    so 'payroll_*.csv' scores higher than a catch-all '*.csv'.
+    Parameters: pattern (str).
+    Returns: int.
+    """
+    literal_count = 0
+    for character in pattern:
+        if character not in "*?":
+            literal_count += 1
+    wildcard_count = pattern.count("*") + pattern.count("?")
+    return literal_count - wildcard_count
+
+
+def most_specific_profile(matches):
+    """
+    From several matching profiles, return the one with the most specific pattern.
+    On a tie, the first one (creation order) is kept.
+    Parameters: matches (list of profile dicts).
+    Returns: a profile dict.
+    """
+    best = matches[0]
+    best_score = pattern_specificity(best["file_pattern"])
+    for profile in matches[1:]:
+        score = pattern_specificity(profile["file_pattern"])
+        if score > best_score:
+            best = profile
+            best_score = score
+    return best
 
 
 def review_folder_for(folder):
