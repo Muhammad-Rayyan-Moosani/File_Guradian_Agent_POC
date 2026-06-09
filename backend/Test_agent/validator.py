@@ -16,7 +16,9 @@ database).
 """
 
 import csv
+import json
 import warnings
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pandas as pd
@@ -71,27 +73,51 @@ class Findings:
 # --- the public entry points -----------------------------------------------
 
 def validate_file(path, columns, cross_rules, allow_extra=True,
-                  chunk_rows=DEFAULT_CHUNK_ROWS):
+                  chunk_rows=DEFAULT_CHUNK_ROWS, file_type=None):
     """
-    Validate a CSV file on disk, reading it in chunks so memory stays flat.
-    Parameters: path (str), columns (list of column-rule dicts),
-        cross_rules (list of cross-rule dicts), allow_extra (bool),
-        chunk_rows (int rows per chunk).
-    Returns: dict {issues, error_count, warning_count, total_rows, headers}.
+    Validate a file on disk against a profile's rules. Picks the reader by the
+    profile's file_type (or the file extension) — CSV, JSON, or XML — then runs
+    the exact same column and cross-column checks on the resulting rows.
+    Parameters: path (str), columns (list), cross_rules (list), allow_extra (bool),
+        chunk_rows (int, CSV only), file_type (str or None: 'CSV'/'JSON'/'XML').
+    Returns: dict {issues, error_count, warning_count, total_rows, headers, notes}.
+    """
+    kind = (file_type or "").strip().upper() or guess_kind(path)
+
+    if kind == "JSON":
+        frame = read_json_table(path)
+        return validate_frames(list(frame.columns), [frame], columns,
+                               cross_rules, allow_extra)
+    if kind == "XML":
+        frame = read_xml_table(path)
+        return validate_frames(list(frame.columns), [frame], columns,
+                               cross_rules, allow_extra)
+
+    # Default: CSV, streamed in chunks so memory stays flat on huge files.
+    encoding = pick_encoding(path)
+    headers = read_headers(path, encoding)
+    frames = iter_chunks(path, encoding, chunk_rows)
+    return validate_frames(headers, frames, columns, cross_rules, allow_extra)
+
+
+def validate_frames(headers, frames, columns, cross_rules, allow_extra):
+    """
+    Run the header checks and the per-chunk column/cross checks over a sequence
+    of DataFrames. CSV passes many chunks; JSON/XML pass a single frame.
+    Parameters: headers (list of str), frames (iterable of DataFrames),
+        columns (list), cross_rules (list), allow_extra (bool).
+    Returns: dict {issues, error_count, warning_count, total_rows, headers, notes}.
     """
     found = Findings()
-    encoding = pick_encoding(path)
 
     # Header-level checks first (missing required, unexpected, duplicate names).
-    headers = read_headers(path, encoding)
     for issue in check_headers(headers, columns, allow_extra):
         found.add_sample((issue.get("column_name"), "header"), issue)
         found.add_total(issue["severity"], 1)
 
-    # Stream the rows and check each chunk.
     unique_state = {}        # column name -> {"seen": set(), "truncated": bool}
     total_rows = 0
-    for chunk in iter_chunks(path, encoding, chunk_rows):
+    for chunk in frames:
         chunk = chunk.reset_index(drop=True)
         offset = total_rows
         for column in columns:
@@ -177,6 +203,128 @@ def iter_chunks(path, encoding, chunk_rows):
     )
     for chunk in reader:
         yield chunk
+
+
+# --- reading JSON and XML ---------------------------------------------------
+# Both are turned into a DataFrame of plain strings (one row per record), the
+# same shape a CSV chunk has, so the existing checks work unchanged. Missing
+# values become "" (blank), which the checks already understand.
+
+def guess_kind(path):
+    """
+    Decide the file kind from its extension when the profile didn't say.
+    Parameters: path (str).
+    Returns: 'JSON', 'XML', or 'CSV'.
+    """
+    lowered = path.lower()
+    if lowered.endswith(".json"):
+        return "JSON"
+    if lowered.endswith(".xml"):
+        return "XML"
+    return "CSV"
+
+
+def stringify(value):
+    """
+    Turn one JSON/XML value into the plain string the checks expect.
+    None becomes "", booleans become 'true'/'false', nested data becomes JSON
+    text, and numbers/strings are kept as-is (so integers stay integers).
+    Parameters: value (anything).
+    Returns: str.
+    """
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (dict, list)):
+        return json.dumps(value)
+    return str(value)
+
+
+def clean_record(record):
+    """
+    Convert one record (a dict) into a dict of column -> clean string value.
+    Parameters: record (dict).
+    Returns: dict.
+    """
+    row = {}
+    for key, value in record.items():
+        row[str(key)] = stringify(value)
+    return row
+
+
+def records_to_frame(records):
+    """
+    Build a string DataFrame from a list of record dicts (missing keys -> "").
+    Parameters: records (list of dicts).
+    Returns: a pandas DataFrame.
+    """
+    rows = []
+    for record in records:
+        rows.append(clean_record(record))
+    frame = pd.DataFrame(rows)
+    if frame.empty:
+        return frame
+    return frame.fillna("").astype(str)
+
+
+def extract_records(data):
+    """
+    Find the list of record objects inside parsed JSON.
+    Handles a top-level array, or an object wrapping the array under a key like
+    'data'/'items'/'records'/'rows', or a single object treated as one record.
+    Parameters: data (the parsed JSON value).
+    Returns: list of dicts.
+    """
+    if isinstance(data, list):
+        return [item for item in data if isinstance(item, dict)]
+
+    if isinstance(data, dict):
+        # Prefer well-known wrapper keys, then any value that is a list of dicts.
+        for key in ("data", "items", "records", "rows", "results"):
+            value = data.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, dict)]
+        for value in data.values():
+            if isinstance(value, list) and value and isinstance(value[0], dict):
+                return [item for item in value if isinstance(item, dict)]
+        # No array inside — treat the object itself as a single record.
+        return [data]
+
+    return []
+
+
+def read_json_table(path):
+    """
+    Read a JSON file into a string DataFrame (one row per record).
+    Parameters: path (str).
+    Returns: a pandas DataFrame.
+    """
+    with open(path, "r", encoding="utf-8-sig") as handle:
+        data = json.load(handle)
+    return records_to_frame(extract_records(data))
+
+
+def read_xml_table(path):
+    """
+    Read an XML file into a string DataFrame. Each direct child of the root is a
+    record; that record's attributes and child-element texts become columns.
+    Parameters: path (str).
+    Returns: a pandas DataFrame.
+    """
+    root = ET.parse(path).getroot()
+
+    records = []
+    for record_el in list(root):
+        row = {}
+        for attr_name, attr_value in record_el.attrib.items():
+            row[attr_name] = attr_value
+        for child in record_el:
+            text = child.text or ""
+            row[child.tag] = text.strip()
+        records.append(row)
+
+    return records_to_frame(records)
 
 
 # --- header checks ----------------------------------------------------------

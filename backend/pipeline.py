@@ -283,13 +283,14 @@ def run_checks(run_id, profile, file_info, file_path, file_name):
     # 3. Validate the file — streamed in chunks so memory stays flat.
     try:
         result = validate_file(file_path, columns, cross_rules,
-                               profile.get("allow_extra_columns", True), CHUNK_ROWS)
+                               profile.get("allow_extra_columns", True), CHUNK_ROWS,
+                               file_type=profile.get("file_type"))
     except Exception as error:
-        # The file is there but isn't a readable CSV — quarantine it.
+        # The file is there but isn't readable in its expected format — quarantine it.
         log.warning("Could not read %s: %s", file_path, error)
         log_event(run_id, "Test", "Could not read file", str(error))
         issues = [single_error(
-            "File Read", f"File could not be read as CSV: {error}", "type")]
+            "File Read", f"File could not be read: {error}", "type")]
         return complete_run(run_id, profile, file_path, file_name,
                             "failed", issues, 1, 0, None)
 
