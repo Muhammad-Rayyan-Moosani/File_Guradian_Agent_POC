@@ -169,9 +169,10 @@ export interface AppSettings {
   defaultRecipients: string[];
 
   // AI provider settings (the API keys themselves live in the .env, not here).
-  aiProvider: "off" | "anthropic" | "openai" | "local" | "vertex";
+  aiProvider: "off" | "anthropic" | "openai" | "local" | "vertex" | "claudecli";
   aiModel: string;
   aiBaseUrl: string;
   vertexProject: string;
   vertexLocation: string;
+  aiCliPath: string;
 }

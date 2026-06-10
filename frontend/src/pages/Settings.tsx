@@ -35,6 +35,7 @@ const EMPTY_SETTINGS: AppSettings = {
   aiBaseUrl: "",
   vertexProject: "",
   vertexLocation: "",
+  aiCliPath: "",
 };
 
 export function Settings() {
@@ -241,6 +242,7 @@ export function Settings() {
                 className="block w-full sm:w-72 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
               >
                 <option value="off">Off — use the built-in template (no AI)</option>
+                <option value="claudecli">Claude CLI (signed-in account, no API key)</option>
                 <option value="anthropic">Anthropic (Claude)</option>
                 <option value="openai">OpenAI</option>
                 <option value="local">Local / self-hosted (OpenAI-compatible)</option>
@@ -264,6 +266,15 @@ export function Settings() {
                       value={settings.aiBaseUrl}
                       onChange={(v) => update("aiBaseUrl", v)}
                       placeholder="http://localhost:11434/v1"
+                      mono
+                    />
+                  ) : null}
+                  {settings.aiProvider === "claudecli" ? (
+                    <TextField
+                      label="CLI command (optional)"
+                      value={settings.aiCliPath}
+                      onChange={(v) => update("aiCliPath", v)}
+                      placeholder="claude"
                       mono
                     />
                   ) : null}
@@ -579,6 +590,17 @@ function AiKeyHint({
       <p className="text-xs text-slate-500">
         No API key needed for a local server — just set the Base URL above (e.g.
         Ollama or LM Studio).
+      </p>
+    );
+  }
+
+  if (provider === "claudecli") {
+    return (
+      <p className="text-xs text-slate-500">
+        No API key — this runs the <code className="font-mono">claude</code> CLI
+        signed in on this machine. Make sure the Claude CLI is installed and
+        logged in (run <code className="font-mono">claude</code> once to sign in)
+        on the computer running the app.
       </p>
     );
   }

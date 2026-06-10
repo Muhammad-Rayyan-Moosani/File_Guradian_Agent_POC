@@ -117,6 +117,7 @@ CREATE TABLE IF NOT EXISTS app_settings (
     ai_base_url            TEXT,                          -- for local / vertex (OpenAI-compatible URL)
     vertex_project         TEXT,
     vertex_location        TEXT,
+    ai_cli_path            TEXT,                          -- command for the Claude CLI provider (default 'claude')
 
     updated_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );

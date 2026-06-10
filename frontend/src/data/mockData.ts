@@ -19,4 +19,5 @@ export const mockSettings: AppSettings = {
   aiBaseUrl: "",
   vertexProject: "",
   vertexLocation: "",
+  aiCliPath: "",
 };

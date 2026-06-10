@@ -52,6 +52,7 @@ def get_ai_settings():
         "base_url": row.get("ai_base_url") or "",
         "vertex_project": row.get("vertex_project") or "",
         "vertex_location": row.get("vertex_location") or "",
+        "cli_path": row.get("ai_cli_path") or "",
     }
 
 
@@ -90,6 +91,11 @@ def is_configured(settings):
         return bool(settings["base_url"])
     if provider == "vertex":
         return bool(os.getenv("VERTEX_ACCESS_TOKEN") and settings["base_url"])
+    if provider == "claudecli":
+        # No API key — it uses the signed-in `claude` CLI. We can't cheaply
+        # verify the login here, so treat "selected" as configured; the Test
+        # button (and the first real call) will surface any problem.
+        return True
     return False
 
 
@@ -118,6 +124,8 @@ def generate(system_prompt, user_message, max_tokens=500):
     try:
         if provider == "anthropic":
             return call_anthropic(settings, system_prompt, user_message, max_tokens)
+        if provider == "claudecli":
+            return call_claude_cli(settings, system_prompt, user_message)
         # openai, local, and vertex all speak the OpenAI-compatible protocol.
         return call_openai_compatible(settings, provider, system_prompt,
                                       user_message, max_tokens)
@@ -171,6 +179,28 @@ def call_openai_compatible(settings, provider, system_prompt, user_message, max_
     return response.choices[0].message.content
 
 
+def call_claude_cli(settings, system_prompt, user_message):
+    """
+    Generate by running the signed-in Claude CLI (no API key).
+    Runs `claude -p <prompt> --system-prompt <system>` and returns its output.
+    The machine must have the CLI installed and logged in.
+    Parameters: settings (dict), system_prompt (str), user_message (str).
+    Returns: str.
+    """
+    import subprocess
+
+    command = settings["cli_path"] or "claude"
+    arguments = [command, "-p", user_message, "--system-prompt", system_prompt]
+    if settings["model"]:
+        arguments += ["--model", settings["model"]]
+
+    result = subprocess.run(arguments, capture_output=True, text=True, timeout=180)
+    if result.returncode != 0:
+        message = (result.stderr or "").strip() or "claude CLI exited with an error"
+        raise RuntimeError("Claude CLI failed: " + message[:200])
+    return result.stdout
+
+
 def status():
     """
     Describe the current AI setup for the settings page (no secrets included).
@@ -185,6 +215,7 @@ def status():
         "baseUrl": settings["base_url"],
         "vertexProject": settings["vertex_project"],
         "vertexLocation": settings["vertex_location"],
+        "cliPath": settings["cli_path"],
         "configured": is_configured(settings),
         "keysPresent": {
             "anthropic": bool(os.getenv("ANTHROPIC_API_KEY")),

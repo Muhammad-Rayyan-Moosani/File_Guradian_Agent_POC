@@ -45,6 +45,7 @@ def to_frontend(row):
         "aiBaseUrl": row.get("ai_base_url") or "",
         "vertexProject": row.get("vertex_project") or "",
         "vertexLocation": row.get("vertex_location") or "",
+        "aiCliPath": row.get("ai_cli_path") or "",
     }
 
 
@@ -71,6 +72,7 @@ def to_database(body):
         "ai_base_url": body.get("aiBaseUrl") or None,
         "vertex_project": body.get("vertexProject") or None,
         "vertex_location": body.get("vertexLocation") or None,
+        "ai_cli_path": body.get("aiCliPath") or None,
     }
 
 

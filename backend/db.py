@@ -92,6 +92,7 @@ def init_db():
         "ai_base_url": "TEXT",
         "vertex_project": "TEXT",
         "vertex_location": "TEXT",
+        "ai_cli_path": "TEXT",
     })
 
     log.info("Database ready at %s", DB_PATH)
