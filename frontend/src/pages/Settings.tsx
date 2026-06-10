@@ -11,9 +11,12 @@ import {
   Clock,
   Loader2,
   CheckCircle2,
+  Sparkles,
+  Plug,
 } from "lucide-react";
 import { Topbar } from "../components/Topbar";
 import { api } from "../lib/api";
+import type { AiStatus } from "../lib/api";
 import type { AppSettings } from "../types";
 
 const EMPTY_SETTINGS: AppSettings = {
@@ -27,6 +30,11 @@ const EMPTY_SETTINGS: AppSettings = {
   smtpFrom: "",
   teamsWebhookUrl: "",
   defaultRecipients: [],
+  aiProvider: "off",
+  aiModel: "",
+  aiBaseUrl: "",
+  vertexProject: "",
+  vertexLocation: "",
 };
 
 export function Settings() {
@@ -36,6 +44,9 @@ export function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<AiStatus | null>(null);
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -44,10 +55,31 @@ export function Settings() {
       .then((s) => !cancelled && setSettings(s))
       .catch((e: Error) => !cancelled && setError(e.message))
       .finally(() => !cancelled && setLoading(false));
+    api
+      .aiStatus()
+      .then((s) => !cancelled && setAiStatus(s))
+      .catch(() => {});
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function testAiConnection() {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      // Test uses the saved settings, so save first if there are pending edits.
+      await api.updateSettings(settings);
+      const result = await api.aiTest();
+      setTestResult(result);
+      const fresh = await api.aiStatus();
+      setAiStatus(fresh);
+    } catch (e) {
+      setTestResult({ ok: false, message: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setTesting(false);
+    }
+  }
 
   function update<K extends keyof AppSettings>(key: K, value: AppSettings[K]) {
     setSettings((s) => ({ ...s, [key]: value }));
@@ -179,6 +211,108 @@ export function Settings() {
               }
               className="block w-32 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
             />
+          </div>
+        </section>
+
+        {/* AI provider */}
+        <section className="rounded-xl border border-slate-200 bg-white shadow-card overflow-hidden">
+          <div className="px-6 py-4 border-b border-slate-200">
+            <h2 className="inline-flex items-center gap-2 text-sm font-semibold text-slate-900">
+              <Sparkles className="h-4 w-4 text-violet-500" />
+              AI provider
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Used to write plain-English failure summaries and to suggest
+              constraints when you upload a sample. API keys are read from the{" "}
+              <code className="font-mono">.env</code> file next to the app — they
+              are never stored here.
+            </p>
+          </div>
+          <div className="p-6 space-y-5">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1.5">
+                Provider
+              </label>
+              <select
+                value={settings.aiProvider}
+                onChange={(e) =>
+                  update("aiProvider", e.target.value as AppSettings["aiProvider"])
+                }
+                className="block w-full sm:w-72 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:border-transparent"
+              >
+                <option value="off">Off — use the built-in template (no AI)</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+                <option value="openai">OpenAI</option>
+                <option value="local">Local / self-hosted (OpenAI-compatible)</option>
+                <option value="vertex">Google Vertex AI</option>
+              </select>
+            </div>
+
+            {settings.aiProvider !== "off" ? (
+              <>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <TextField
+                    label="Model"
+                    value={settings.aiModel}
+                    onChange={(v) => update("aiModel", v)}
+                    placeholder="e.g. claude-haiku-4-5 / gpt-4o-mini"
+                  />
+                  {settings.aiProvider === "local" ||
+                  settings.aiProvider === "vertex" ? (
+                    <TextField
+                      label="Base URL (OpenAI-compatible endpoint)"
+                      value={settings.aiBaseUrl}
+                      onChange={(v) => update("aiBaseUrl", v)}
+                      placeholder="http://localhost:11434/v1"
+                      mono
+                    />
+                  ) : null}
+                </div>
+
+                {settings.aiProvider === "vertex" ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <TextField
+                      label="GCP project"
+                      value={settings.vertexProject}
+                      onChange={(v) => update("vertexProject", v)}
+                    />
+                    <TextField
+                      label="Region / location"
+                      value={settings.vertexLocation}
+                      onChange={(v) => update("vertexLocation", v)}
+                      placeholder="us-central1"
+                    />
+                  </div>
+                ) : null}
+
+                <AiKeyHint provider={settings.aiProvider} aiStatus={aiStatus} />
+
+                <div className="flex flex-wrap items-center gap-3 pt-1">
+                  <button
+                    type="button"
+                    onClick={testAiConnection}
+                    disabled={testing}
+                    className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                  >
+                    {testing ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <Plug className="h-4 w-4" />
+                    )}
+                    {testing ? "Testing…" : "Save & test connection"}
+                  </button>
+                  {testResult ? (
+                    <span
+                      className={`text-sm ${
+                        testResult.ok ? "text-emerald-700" : "text-rose-700"
+                      }`}
+                    >
+                      {testResult.message}
+                    </span>
+                  ) : null}
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
 
@@ -430,5 +564,46 @@ function TextField({
         }`}
       />
     </div>
+  );
+}
+
+function AiKeyHint({
+  provider,
+  aiStatus,
+}: {
+  provider: AppSettings["aiProvider"];
+  aiStatus: AiStatus | null;
+}) {
+  if (provider === "local") {
+    return (
+      <p className="text-xs text-slate-500">
+        No API key needed for a local server — just set the Base URL above (e.g.
+        Ollama or LM Studio).
+      </p>
+    );
+  }
+
+  const keyNames: Record<string, string> = {
+    anthropic: "ANTHROPIC_API_KEY",
+    openai: "OPENAI_API_KEY",
+    vertex: "VERTEX_ACCESS_TOKEN",
+  };
+  const keyName = keyNames[provider];
+  const present = aiStatus
+    ? aiStatus.keysPresent[provider as "anthropic" | "openai" | "vertex"]
+    : false;
+
+  return (
+    <p className="text-xs">
+      <span className="text-slate-500">API key </span>
+      <code className="font-mono">{keyName}</code>
+      {present ? (
+        <span className="ml-1 text-emerald-700">— detected in .env ✓</span>
+      ) : (
+        <span className="ml-1 text-rose-700">
+          — not found. Add it to the .env next to the app, then restart.
+        </span>
+      )}
+    </p>
   );
 }

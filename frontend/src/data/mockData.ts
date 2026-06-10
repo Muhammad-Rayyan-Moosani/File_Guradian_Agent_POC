@@ -14,4 +14,9 @@ export const mockSettings: AppSettings = {
   smtpFrom: "fileguardian@xorbix.com",
   teamsWebhookUrl: "",
   defaultRecipients: ["ops-team@xorbix.com"],
+  aiProvider: "off",
+  aiModel: "",
+  aiBaseUrl: "",
+  vertexProject: "",
+  vertexLocation: "",
 };

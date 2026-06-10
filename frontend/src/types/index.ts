@@ -167,4 +167,11 @@ export interface AppSettings {
   smtpFrom: string;
   teamsWebhookUrl: string;
   defaultRecipients: string[];
+
+  // AI provider settings (the API keys themselves live in the .env, not here).
+  aiProvider: "off" | "anthropic" | "openai" | "local" | "vertex";
+  aiModel: string;
+  aiBaseUrl: string;
+  vertexProject: string;
+  vertexLocation: string;
 }

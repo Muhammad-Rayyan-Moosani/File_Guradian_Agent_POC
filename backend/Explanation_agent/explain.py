@@ -18,6 +18,7 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
 import paths  # noqa: E402
+import ai_provider  # noqa: E402
 
 log = get_logger("Explanation")
 
@@ -33,9 +34,9 @@ def explain(meta, issues):
         error_count, warning_count), issues (list of issue dicts).
     Returns: dict with keys summary, impact, action.
     """
-    # Only spend an AI call when the file actually failed. Passing files get
-    # the instant template summary (no latency, no cost).
-    if meta.get("status") == "failed" and os.getenv("ANTHROPIC_API_KEY"):
+    # Only spend an AI call when the file actually failed and AI is configured.
+    # Passing files get the instant template summary (no latency, no cost).
+    if meta.get("status") == "failed" and ai_provider.is_enabled():
         try:
             return summarize_with_llm(meta, issues)
         except Exception as error:
@@ -156,12 +157,10 @@ SYSTEM_PROMPT = (
 
 def summarize_with_llm(meta, issues):
     """
-    Ask Claude to write the summary from the grouped issues.
+    Ask the configured AI provider to write the summary from the grouped issues.
     Parameters: meta (dict), issues (list of issue dicts).
     Returns: dict with keys summary, impact, action.
     """
-    import anthropic
-
     # Group and cap the issues so the prompt stays small.
     groups = group_issues(issues)
     lines = []
@@ -179,19 +178,12 @@ def summarize_with_llm(meta, issues):
         'Return JSON: {"summary": ..., "impact": ..., "action": ...}'
     )
 
-    client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-    response = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=500,
-        system=[{
-            "type": "text",
-            "text": SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": user_message}],
-    )
+    reply = ai_provider.generate(SYSTEM_PROMPT, user_message, max_tokens=500)
+    if not reply:
+        # AI off/unavailable — raise so explain() falls back to the template.
+        raise RuntimeError("AI provider returned no response")
 
-    data = extract_json(response.content[0].text)
+    data = extract_json(reply)
     return {
         "summary": data.get("summary", ""),
         "impact": data.get("impact", ""),

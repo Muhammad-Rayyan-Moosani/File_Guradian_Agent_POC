@@ -18,6 +18,16 @@ export interface AuthStatus {
   username?: string | null;
 }
 
+export interface AiStatus {
+  provider: string;
+  model: string;
+  baseUrl: string;
+  vertexProject: string;
+  vertexLocation: string;
+  configured: boolean;
+  keysPresent: { anthropic: boolean; openai: boolean; vertex: boolean };
+}
+
 // Same-origin by default. In production, Flask serves both the UI and the API
 // on one port, so a relative path like "/api/runs" hits the right place no
 // matter which machine opens the app. During development the Vite dev server
@@ -137,4 +147,10 @@ export const api = {
       method: "PUT",
       body: JSON.stringify(settings),
     }),
+
+  // AI provider status (which keys are present, current provider/model) + a
+  // live connection test that calls the configured provider once.
+  aiStatus: (): Promise<AiStatus> => request("/api/ai/status"),
+  aiTest: (): Promise<{ ok: boolean; message: string }> =>
+    request("/api/ai/test", { method: "POST" }),
 };

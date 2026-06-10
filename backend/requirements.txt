@@ -6,4 +6,6 @@ watchdog
 pandas
 numpy
 anthropic
+openai
+# openai also drives the OpenAI / Local / Vertex AI providers (via base_url).
 # The database is local SQLite via Python's built-in sqlite3 — no package needed.

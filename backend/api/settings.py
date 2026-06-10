@@ -16,6 +16,7 @@ from flask import Blueprint, jsonify, request
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from logging_setup import get_logger  # noqa: E402
 import db  # noqa: E402
+import ai_provider  # noqa: E402
 
 log = get_logger("Settings API")
 
@@ -39,6 +40,11 @@ def to_frontend(row):
         "smtpFrom": row.get("smtp_from", ""),
         "teamsWebhookUrl": row.get("teams_webhook_url", ""),
         "defaultRecipients": row.get("default_recipients") or [],
+        "aiProvider": row.get("ai_provider") or "off",
+        "aiModel": row.get("ai_model") or "",
+        "aiBaseUrl": row.get("ai_base_url") or "",
+        "vertexProject": row.get("vertex_project") or "",
+        "vertexLocation": row.get("vertex_location") or "",
     }
 
 
@@ -60,6 +66,11 @@ def to_database(body):
         "smtp_from": body.get("smtpFrom"),
         "teams_webhook_url": body.get("teamsWebhookUrl"),
         "default_recipients": body.get("defaultRecipients") or [],
+        "ai_provider": body.get("aiProvider") or "off",
+        "ai_model": body.get("aiModel") or None,
+        "ai_base_url": body.get("aiBaseUrl") or None,
+        "vertex_project": body.get("vertexProject") or None,
+        "vertex_location": body.get("vertexLocation") or None,
     }
 
 
@@ -93,3 +104,25 @@ def update_settings():
     row = to_database(body)
     saved = db.replace_settings(row)
     return jsonify(to_frontend(saved))
+
+
+@settings_bp.get("/api/ai/status")
+def ai_status():
+    """
+    Report the current AI provider/model and which keys are present in the .env.
+    Parameters: none.
+    Returns: JSON describing the AI setup (no secrets).
+    """
+    log.info("GET /api/ai/status")
+    return jsonify(ai_provider.status())
+
+
+@settings_bp.post("/api/ai/test")
+def ai_test():
+    """
+    Make one tiny call to confirm the configured AI provider works.
+    Parameters: none.
+    Returns: JSON {ok, message}.
+    """
+    log.info("POST /api/ai/test")
+    return jsonify(ai_provider.test_connection())

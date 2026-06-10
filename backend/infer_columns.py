@@ -23,6 +23,7 @@ import pandas as pd
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from logging_setup import get_logger  # noqa: E402
+import ai_provider  # noqa: E402
 
 log = get_logger("Inference")
 
@@ -216,14 +217,12 @@ def apply_suggestion(column, suggestion):
     return changed
 
 
-def ask_claude(columns, samples, api_key):
+def ask_ai(columns, samples):
     """
-    Ask Claude to propose a regex and/or allowed-values for each column.
-    Parameters: columns (list), samples (dict name->example values), api_key (str).
+    Ask the configured AI provider to propose a regex and/or allowed-values per column.
+    Parameters: columns (list), samples (dict name->example values).
     Returns: dict mapping a column name to {regex?, allowedValues?}.
     """
-    import anthropic
-
     lines = []
     for column in columns:
         name = column["name"]
@@ -239,18 +238,10 @@ def ask_claude(columns, samples, api_key):
         "Include only the columns you are confident about; omit the rest."
     )
 
-    client = anthropic.Anthropic(api_key=api_key)
-    response = client.messages.create(
-        model="claude-haiku-4-5",
-        max_tokens=700,
-        system=[{
-            "type": "text",
-            "text": AI_SYSTEM_PROMPT,
-            "cache_control": {"type": "ephemeral"},
-        }],
-        messages=[{"role": "user", "content": user_message}],
-    )
-    return extract_json_object(response.content[0].text)
+    reply = ai_provider.generate(AI_SYSTEM_PROMPT, user_message, max_tokens=700)
+    if not reply:
+        raise RuntimeError("AI provider returned no response")
+    return extract_json_object(reply)
 
 
 def extract_json_object(text):
@@ -273,13 +264,12 @@ def enhance_with_ai(columns, samples):
     Parameters: columns (list of column dicts), samples (dict name->values).
     Returns: tuple (columns list, enhanced_ids list).
     """
-    api_key = os.getenv("ANTHROPIC_API_KEY")
-    if not api_key:
-        log.info("No ANTHROPIC_API_KEY set — skipping AI enrichment")
+    if not ai_provider.is_enabled():
+        log.info("AI is off / not configured — skipping AI enrichment")
         return columns, []
 
     try:
-        suggestions = ask_claude(columns, samples, api_key)
+        suggestions = ask_ai(columns, samples)
     except Exception:
         log.exception("AI enrichment failed — using basic inference")
         return columns, []

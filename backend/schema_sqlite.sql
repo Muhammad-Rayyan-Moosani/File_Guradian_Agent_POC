@@ -110,6 +110,14 @@ CREATE TABLE IF NOT EXISTS app_settings (
     smtp_from              TEXT,
     teams_webhook_url      TEXT,
     default_recipients     TEXT NOT NULL DEFAULT '[]',   -- JSON array of strings
+
+    -- AI provider settings (keys themselves stay in the .env, not here)
+    ai_provider            TEXT NOT NULL DEFAULT 'off',  -- off/anthropic/openai/local/vertex
+    ai_model               TEXT,
+    ai_base_url            TEXT,                          -- for local / vertex (OpenAI-compatible URL)
+    vertex_project         TEXT,
+    vertex_location        TEXT,
+
     updated_at             TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 

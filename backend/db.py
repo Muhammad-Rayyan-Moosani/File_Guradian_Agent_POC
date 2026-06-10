@@ -83,7 +83,40 @@ def init_db():
         connection.commit()
     finally:
         connection.close()
+
+    # Add any newer columns to tables that already existed from an older version
+    # (CREATE TABLE IF NOT EXISTS won't alter an existing table).
+    ensure_columns("app_settings", {
+        "ai_provider": "TEXT NOT NULL DEFAULT 'off'",
+        "ai_model": "TEXT",
+        "ai_base_url": "TEXT",
+        "vertex_project": "TEXT",
+        "vertex_location": "TEXT",
+    })
+
     log.info("Database ready at %s", DB_PATH)
+
+
+def ensure_columns(table, columns):
+    """
+    Add any missing columns to an existing table (a simple forward migration).
+    Parameters: table (str), columns (dict of column name -> column definition).
+    Returns: None.
+    """
+    connection = get_connection()
+    try:
+        rows = connection.execute("PRAGMA table_info({})".format(table)).fetchall()
+        existing = set()
+        for row in rows:
+            existing.add(row["name"])
+        for name, definition in columns.items():
+            if name not in existing:
+                connection.execute(
+                    "ALTER TABLE {} ADD COLUMN {} {}".format(table, name, definition))
+                log.info("Added new column %s.%s", table, name)
+        connection.commit()
+    finally:
+        connection.close()
 
 
 def decode_row(row):

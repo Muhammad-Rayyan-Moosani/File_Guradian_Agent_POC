@@ -30,6 +30,8 @@ hiddenimports = [
     "paths",
     "db",
     "pipeline",
+    "ai_provider",
+    "infer_columns",
     "logging_setup",
     "api.profiles",
     "api.runs",
@@ -45,7 +47,7 @@ hiddenimports = [
 # (watchdog picks its OS-specific file-watcher at runtime). Collect them whole.
 # collect_all runs on the build machine, so the Windows build picks up the
 # Windows file-watcher automatically.
-for package_name in ("anthropic", "watchdog"):
+for package_name in ("anthropic", "openai", "watchdog"):
     package_datas, package_binaries, package_hidden = collect_all(package_name)
     datas += package_datas
     binaries += package_binaries
