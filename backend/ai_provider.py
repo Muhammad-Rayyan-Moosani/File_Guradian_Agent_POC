@@ -108,12 +108,14 @@ def is_enabled():
     return is_configured(get_ai_settings())
 
 
-def generate(system_prompt, user_message, max_tokens=500):
+def generate(system_prompt, user_message, max_tokens=500, raise_errors=False):
     """
     Generate text from the configured provider.
     Returns the model's reply as a string, or None if AI is off / not configured
     / the call failed — callers treat None as "fall back to the template".
-    Parameters: system_prompt (str), user_message (str), max_tokens (int).
+    Parameters: system_prompt (str), user_message (str), max_tokens (int),
+        raise_errors (bool — if True, re-raise the real error instead of
+        returning None; used by the Test button so the user sees what went wrong).
     Returns: str or None.
     """
     settings = get_ai_settings()
@@ -131,6 +133,8 @@ def generate(system_prompt, user_message, max_tokens=500):
                                       user_message, max_tokens)
     except Exception:
         log.exception("AI call failed (provider=%s) — falling back to template", provider)
+        if raise_errors:
+            raise
         return None
 
 
@@ -183,21 +187,37 @@ def call_claude_cli(settings, system_prompt, user_message):
     """
     Generate by running the signed-in Claude CLI (no API key).
     Runs `claude -p <prompt> --system-prompt <system>` and returns its output.
-    The machine must have the CLI installed and logged in.
+    The machine must have the CLI installed, on the PATH, and logged in.
     Parameters: settings (dict), system_prompt (str), user_message (str).
     Returns: str.
     """
+    import shutil
     import subprocess
 
     command = settings["cli_path"] or "claude"
-    arguments = [command, "-p", user_message, "--system-prompt", system_prompt]
+    # Resolve the real executable so we find it whatever the extension is
+    # (e.g. claude.cmd on Windows) and give a clear error if it isn't there.
+    resolved = shutil.which(command)
+    if not resolved:
+        raise RuntimeError(
+            "The '" + command + "' command was not found on this machine. Install "
+            "the Claude CLI and make sure it is on the PATH of the computer running "
+            "the app.")
+
+    arguments = [resolved, "-p", user_message, "--system-prompt", system_prompt]
     if settings["model"]:
         arguments += ["--model", settings["model"]]
 
     result = subprocess.run(arguments, capture_output=True, text=True, timeout=180)
     if result.returncode != 0:
-        message = (result.stderr or "").strip() or "claude CLI exited with an error"
-        raise RuntimeError("Claude CLI failed: " + message[:200])
+        detail = (result.stderr or result.stdout or "").strip() or "the CLI exited with an error"
+        raise RuntimeError("Claude CLI error: " + detail[:300])
+
+    output = (result.stdout or "").strip()
+    if not output:
+        raise RuntimeError(
+            "The Claude CLI ran but returned nothing. Make sure it is logged in "
+            "(run `claude` once on this machine to sign in).")
     return result.stdout
 
 
@@ -238,8 +258,13 @@ def test_connection():
         return {"ok": False,
                 "message": "This provider isn't fully configured — check its API key in the .env and any required URL/region."}
 
-    reply = generate("You are a connection test.",
-                     "Reply with the single word: OK", max_tokens=20)
+    try:
+        reply = generate("You are a connection test.",
+                         "Reply with the single word: OK", max_tokens=20,
+                         raise_errors=True)
+    except Exception as error:
+        return {"ok": False, "message": str(error)[:300]}
+
     if reply and reply.strip():
         return {"ok": True, "message": "Connected. The model replied: " + reply.strip()[:80]}
     return {"ok": False,
