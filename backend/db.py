@@ -40,6 +40,7 @@ ARRAY_COLUMNS = {
     "allowed_values",
     "notified_recipients",
     "default_recipients",
+    "top_values",
 }
 
 
@@ -93,6 +94,10 @@ def init_db():
         "vertex_project": "TEXT",
         "vertex_location": "TEXT",
         "ai_cli_path": "TEXT",
+    })
+    ensure_columns("validation_runs", {
+        "total_rows": "INTEGER",
+        "column_count": "INTEGER",
     })
 
     log.info("Database ready at %s", DB_PATH)

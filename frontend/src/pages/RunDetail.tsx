@@ -144,6 +144,14 @@ export function RunDetail() {
               <Meta label="Errors" value={String(run.errorCount)} />
               <Meta label="Warnings" value={String(run.warningCount)} />
               <Meta
+                label="Rows"
+                value={run.totalRows != null ? String(run.totalRows) : "—"}
+              />
+              <Meta
+                label="Columns"
+                value={run.columnCount != null ? String(run.columnCount) : "—"}
+              />
+              <Meta
                 label="Duration"
                 value={formatDuration(run.receivedAt, run.completedAt)}
               />
@@ -266,6 +274,73 @@ export function RunDetail() {
                 </ul>
               )}
             </section>
+
+            {/* File statistics */}
+            {run.columnStats && run.columnStats.length > 0 ? (
+              <section className="rounded-xl border border-slate-200 bg-white shadow-card overflow-hidden">
+                <div className="px-5 py-4 border-b border-slate-200">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    File statistics
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    A per-column profile of this file (groundwork for future
+                    ML-based validation).
+                  </p>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-[11px] uppercase tracking-wider text-slate-500">
+                        <th className="px-4 py-2 font-medium">Column</th>
+                        <th className="px-4 py-2 font-medium">Values</th>
+                        <th className="px-4 py-2 font-medium">Blank</th>
+                        <th className="px-4 py-2 font-medium">Distinct</th>
+                        <th className="px-4 py-2 font-medium">Min</th>
+                        <th className="px-4 py-2 font-medium">Max</th>
+                        <th className="px-4 py-2 font-medium">Avg</th>
+                        <th className="px-4 py-2 font-medium">Most common</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {run.columnStats.map((s) => (
+                        <tr
+                          key={s.columnName}
+                          className="border-b border-slate-100 last:border-0"
+                        >
+                          <td className="px-4 py-2 font-medium text-slate-900">
+                            {s.columnName}
+                          </td>
+                          <td className="px-4 py-2 text-slate-700">{s.totalCount}</td>
+                          <td className="px-4 py-2 text-slate-700">{s.blankCount}</td>
+                          <td className="px-4 py-2 text-slate-700">
+                            {s.distinctCount}
+                            {s.distinctTruncated ? "+" : ""}
+                          </td>
+                          <td className="px-4 py-2 text-slate-700">
+                            {s.numericMin != null ? s.numericMin : "—"}
+                          </td>
+                          <td className="px-4 py-2 text-slate-700">
+                            {s.numericMax != null ? s.numericMax : "—"}
+                          </td>
+                          <td className="px-4 py-2 text-slate-700">
+                            {s.numericMean != null
+                              ? Math.round(s.numericMean * 100) / 100
+                              : "—"}
+                          </td>
+                          <td className="px-4 py-2 text-slate-500">
+                            {s.topValues.length > 0
+                              ? s.topValues
+                                  .map((t) => `${t.value} (${t.count})`)
+                                  .join(", ")
+                              : "—"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+            ) : null}
           </div>
 
           {/* Right: agent timeline + notification */}

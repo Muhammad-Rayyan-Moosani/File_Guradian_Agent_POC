@@ -51,6 +51,20 @@ export interface AiSummary {
   action?: string;
 }
 
+export interface ColumnStat {
+  columnName: string;
+  totalCount: number;
+  blankCount: number;
+  distinctCount: number;
+  distinctTruncated: boolean;
+  numericMin?: number | null;
+  numericMax?: number | null;
+  numericMean?: number | null;
+  textMinLength?: number | null;
+  textMaxLength?: number | null;
+  topValues: { value: string; count: number }[];
+}
+
 export interface ValidationRun {
   id: string;
   fileName: string;
@@ -62,6 +76,8 @@ export interface ValidationRun {
   issueCount: number;
   errorCount: number;
   warningCount: number;
+  totalRows?: number | null;
+  columnCount?: number | null;
   notificationStatus: "sent" | "not_required" | "failed" | "pending";
   notifiedRecipients?: string[];
   fileSizeKb: number;
@@ -69,6 +85,7 @@ export interface ValidationRun {
   aiSummary: AiSummary;
   issues: ValidationIssue[];
   events: AgentEvent[];
+  columnStats?: ColumnStat[];
 }
 
 // =========================================================================

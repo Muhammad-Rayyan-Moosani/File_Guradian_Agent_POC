@@ -21,16 +21,19 @@ log = get_logger("Runs API")
 runs_bp = Blueprint("runs", __name__)
 
 
-def to_run(row, issues=None, events=None):
+def to_run(row, issues=None, events=None, column_stats=None):
     """
     Convert a validation_runs row into the shape the frontend expects.
-    Parameters: row (dict), issues (list or None), events (list or None).
+    Parameters: row (dict), issues (list or None), events (list or None),
+        column_stats (list or None).
     Returns: dict matching the frontend ValidationRun type.
     """
     if issues is None:
         issues = []
     if events is None:
         events = []
+    if column_stats is None:
+        column_stats = []
 
     return {
         "id": row["id"],
@@ -44,12 +47,36 @@ def to_run(row, issues=None, events=None):
         "issueCount": row.get("issue_count") or 0,
         "errorCount": row.get("error_count") or 0,
         "warningCount": row.get("warning_count") or 0,
+        "totalRows": row.get("total_rows"),
+        "columnCount": row.get("column_count"),
         "notificationStatus": row.get("notification_status") or "not_required",
         "notifiedRecipients": row.get("notified_recipients") or [],
         "destinationPath": row.get("destination_path"),
         "aiSummary": parse_summary(row.get("ai_summary")),
         "issues": issues,
         "events": events,
+        "columnStats": column_stats,
+    }
+
+
+def to_stat(row):
+    """
+    Convert a run_column_stats row into the frontend's column-stat shape.
+    Parameters: row (dict).
+    Returns: dict.
+    """
+    return {
+        "columnName": row["column_name"],
+        "totalCount": row.get("total_count") or 0,
+        "blankCount": row.get("blank_count") or 0,
+        "distinctCount": row.get("distinct_count") or 0,
+        "distinctTruncated": bool(row.get("distinct_truncated")),
+        "numericMin": row.get("numeric_min"),
+        "numericMax": row.get("numeric_max"),
+        "numericMean": row.get("numeric_mean"),
+        "textMinLength": row.get("text_min_length"),
+        "textMaxLength": row.get("text_max_length"),
+        "topValues": row.get("top_values") or [],
     }
 
 
@@ -177,6 +204,8 @@ def get_run(run_id):
     event_rows = db.query_all(
         "SELECT * FROM agent_events WHERE run_id = ? ORDER BY occurred_at",
         (run_id,))
+    stat_rows = db.query_all(
+        "SELECT * FROM run_column_stats WHERE run_id = ? ORDER BY rowid", (run_id,))
 
     issues = []
     for row in issue_rows:
@@ -186,4 +215,8 @@ def get_run(run_id):
     for row in event_rows:
         events.append(to_event(row))
 
-    return jsonify(to_run(run, issues, events))
+    column_stats = []
+    for row in stat_rows:
+        column_stats.append(to_stat(row))
+
+    return jsonify(to_run(run, issues, events, column_stats))

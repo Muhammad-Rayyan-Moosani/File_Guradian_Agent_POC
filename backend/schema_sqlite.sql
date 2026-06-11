@@ -142,6 +142,8 @@ CREATE TABLE IF NOT EXISTS validation_runs (
     issue_count          INTEGER NOT NULL DEFAULT 0,
     error_count          INTEGER NOT NULL DEFAULT 0,
     warning_count        INTEGER NOT NULL DEFAULT 0,
+    total_rows           INTEGER,
+    column_count         INTEGER,
     notification_status  TEXT NOT NULL DEFAULT 'not_required'
                          CHECK (notification_status IN ('sent','not_required','failed','pending')),
     notified_recipients  TEXT NOT NULL DEFAULT '[]',   -- JSON array of strings
@@ -188,6 +190,29 @@ CREATE TABLE IF NOT EXISTS agent_events (
 );
 
 CREATE INDEX IF NOT EXISTS idx_events_run_id ON agent_events(run_id, occurred_at);
+
+
+-- ---------------------------------------------------------------------
+-- 8. RUN COLUMN STATISTICS  (one row per column of each processed file)
+-- A statistical profile of every file — groundwork for ML-based validation.
+-- ---------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS run_column_stats (
+    id                 TEXT PRIMARY KEY,
+    run_id             TEXT NOT NULL REFERENCES validation_runs(id) ON DELETE CASCADE,
+    column_name        TEXT NOT NULL,
+    total_count        INTEGER NOT NULL DEFAULT 0,   -- non-blank values seen
+    blank_count        INTEGER NOT NULL DEFAULT 0,
+    distinct_count     INTEGER NOT NULL DEFAULT 0,
+    distinct_truncated INTEGER NOT NULL DEFAULT 0,   -- 1 if distinct tracking hit its cap
+    numeric_min        REAL,
+    numeric_max        REAL,
+    numeric_mean       REAL,
+    text_min_length    INTEGER,
+    text_max_length    INTEGER,
+    top_values         TEXT                          -- JSON array of {value, count}
+);
+
+CREATE INDEX IF NOT EXISTS idx_col_stats_run ON run_column_stats(run_id);
 
 
 -- =====================================================================

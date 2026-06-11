@@ -93,11 +93,34 @@ def write_issues(run_id, issues):
     with_retries(do_insert)
 
 
-def finalize_run(run_id, status, errors, warnings, destination, summary, notification):
+def write_column_stats(run_id, column_stats):
+    """
+    Save the per-column statistics for a run into the run_column_stats table.
+    Parameters: run_id (str), column_stats (list of stat dicts, or None).
+    Returns: None.
+    """
+    if not column_stats:
+        return
+
+    rows = []
+    for stat in column_stats:
+        row = dict(stat)
+        row["run_id"] = run_id
+        rows.append(row)
+
+    def do_insert():
+        return db.insert_many("run_column_stats", rows)
+
+    with_retries(do_insert)
+
+
+def finalize_run(run_id, status, errors, warnings, destination, summary,
+                 notification, total_rows=None, column_count=None):
     """
     Fill in the final result on the validation_runs row.
     Parameters: run_id (str), status (str), errors (int), warnings (int),
-        destination (str), summary (dict), notification (dict).
+        destination (str), summary (dict), notification (dict),
+        total_rows (int or None), column_count (int or None).
     Returns: None.
     """
     def do_update():
@@ -106,6 +129,8 @@ def finalize_run(run_id, status, errors, warnings, destination, summary, notific
             "issue_count": errors + warnings,
             "error_count": errors,
             "warning_count": warnings,
+            "total_rows": total_rows,
+            "column_count": column_count,
             "destination_path": destination,
             "ai_summary": json.dumps(summary),
             "notification_status": notification["status"],
@@ -185,11 +210,13 @@ def single_error(rule_name, message, kind):
 
 
 def complete_run(run_id, profile, file_path, file_name, status,
-                 issues, errors, warnings, total_rows):
+                 issues, errors, warnings, total_rows,
+                 column_stats=None, column_count=None):
     """
     Move the file, explain, notify, save issues and finalize one run.
     Parameters: run_id (str), profile (dict), file_path/file_name (str),
-        status (str), issues (list), errors/warnings (int), total_rows (int or None).
+        status (str), issues (list), errors/warnings (int), total_rows (int or None),
+        column_stats (list or None), column_count (int or None).
     Returns: dict summary {"run_id", "status", "issues"}.
     """
     if status == "failed":
@@ -211,7 +238,9 @@ def complete_run(run_id, profile, file_path, file_name, status,
     log_event(run_id, "Notification", action, detail)
 
     write_issues(run_id, issues)
-    finalize_run(run_id, status, errors, warnings, dest, summary, notification)
+    write_column_stats(run_id, column_stats)
+    finalize_run(run_id, status, errors, warnings, dest, summary, notification,
+                 total_rows, column_count)
     log_event(run_id, "Audit", "Run finalized", f"status={status}, moved to {dest}")
     return {"run_id": run_id, "status": status, "issues": len(issues)}
 
@@ -298,6 +327,8 @@ def run_checks(run_id, profile, file_info, file_path, file_name):
     errors = result["error_count"]
     warnings = result["warning_count"]
     total_rows = result["total_rows"]
+    column_stats = result.get("column_stats")
+    column_count = result.get("column_count")
     log_event(run_id, "Test", "Ran validation checks",
               f"{errors} errors, {warnings} warnings across {total_rows} rows")
 
@@ -307,7 +338,8 @@ def run_checks(run_id, profile, file_info, file_path, file_name):
     else:
         status = "passed"
     return complete_run(run_id, profile, file_path, file_name, status,
-                        issues, errors, warnings, total_rows)
+                        issues, errors, warnings, total_rows,
+                        column_stats, column_count)
 
 
 def run_pipeline_for_profile(file_info, profile):

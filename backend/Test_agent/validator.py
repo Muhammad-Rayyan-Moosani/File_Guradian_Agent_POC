@@ -41,6 +41,10 @@ UNIQUE_TRACK_LIMIT = 5_000_000
 # Default number of rows to read at once. Can be overridden by the caller.
 DEFAULT_CHUNK_ROWS = 100_000
 
+# Stop remembering new distinct values for the statistics once a column has this
+# many, so a huge, high-cardinality column can't run the process out of memory.
+STATS_DISTINCT_CAP = 50_000
+
 
 class Findings:
     """Collects a capped sample of issues plus the true error/warning totals."""
@@ -68,6 +72,148 @@ class Findings:
         """Keep one more example row for this check."""
         self.sample_counts[key] = self.sample_counts.get(key, 0) + 1
         self.issues.append(issue)
+
+
+def top_count(pair):
+    """
+    Return the count from a (value, count) pair — used to sort most-common values.
+    Parameters: pair (tuple).
+    Returns: int.
+    """
+    return pair[1]
+
+
+class StatsCollector:
+    """
+    Builds a statistical profile of every column as the file streams past.
+
+    For each column it keeps running tallies (how many values, how many blank,
+    distinct values, number min/max/sum, text lengths, value counts). All of it
+    updates chunk by chunk, and the distinct/value-count tracking is capped so a
+    huge file can never use unbounded memory. This data is stored per run and is
+    the groundwork for future machine-learning-based validation.
+    """
+
+    def __init__(self):
+        """Start with no columns tracked yet."""
+        self.columns = {}
+
+    def column(self, name):
+        """
+        Get (creating if needed) the running tally dict for one column.
+        Parameters: name (str).
+        Returns: dict.
+        """
+        if name not in self.columns:
+            self.columns[name] = {
+                "total_count": 0, "blank_count": 0,
+                "counts": {}, "distinct_truncated": False,
+                "num_min": None, "num_max": None, "num_sum": 0.0, "num_count": 0,
+                "len_min": None, "len_max": None,
+            }
+        return self.columns[name]
+
+    def add_chunk(self, frame):
+        """
+        Fold one chunk's values into the running tallies for every column.
+        Parameters: frame (a DataFrame chunk).
+        Returns: None.
+        """
+        for name in frame.columns:
+            tally = self.column(str(name))
+            stripped = frame[name].astype(str).str.strip()
+            blank = stripped == ""
+            nonblank = stripped[~blank]
+
+            tally["blank_count"] += int(blank.to_numpy().sum())
+            tally["total_count"] += int((~blank).to_numpy().sum())
+
+            self.update_value_counts(tally, nonblank)
+            self.update_numeric(tally, nonblank)
+            self.update_lengths(tally, nonblank)
+
+    def update_value_counts(self, tally, nonblank):
+        """
+        Add this chunk's value frequencies to the column's running counts (capped).
+        Parameters: tally (dict), nonblank (Series of non-blank strings).
+        Returns: None.
+        """
+        counts = tally["counts"]
+        for value, number in nonblank.value_counts().items():
+            if value in counts:
+                counts[value] += int(number)
+            elif len(counts) < STATS_DISTINCT_CAP:
+                counts[value] = int(number)
+            else:
+                tally["distinct_truncated"] = True
+
+    def update_numeric(self, tally, nonblank):
+        """
+        Update the numeric min/max/sum/count from any values that are numbers.
+        Parameters: tally (dict), nonblank (Series).
+        Returns: None.
+        """
+        numbers = pd.to_numeric(nonblank, errors="coerce").dropna()
+        if len(numbers) == 0:
+            return
+        chunk_min = float(numbers.min())
+        chunk_max = float(numbers.max())
+        if tally["num_min"] is None or chunk_min < tally["num_min"]:
+            tally["num_min"] = chunk_min
+        if tally["num_max"] is None or chunk_max > tally["num_max"]:
+            tally["num_max"] = chunk_max
+        tally["num_sum"] += float(numbers.sum())
+        tally["num_count"] += int(len(numbers))
+
+    def update_lengths(self, tally, nonblank):
+        """
+        Update the shortest/longest text length seen in the column.
+        Parameters: tally (dict), nonblank (Series).
+        Returns: None.
+        """
+        if len(nonblank) == 0:
+            return
+        lengths = nonblank.str.len()
+        chunk_min = int(lengths.min())
+        chunk_max = int(lengths.max())
+        if tally["len_min"] is None or chunk_min < tally["len_min"]:
+            tally["len_min"] = chunk_min
+        if tally["len_max"] is None or chunk_max > tally["len_max"]:
+            tally["len_max"] = chunk_max
+
+    def results(self):
+        """
+        Turn the running tallies into a list of finished per-column stat dicts.
+        Parameters: none.
+        Returns: list of dicts (one per column).
+        """
+        output = []
+        for name, tally in self.columns.items():
+            counts = tally["counts"]
+
+            ordered = sorted(counts.items(), key=top_count, reverse=True)
+            top_values = []
+            for value, number in ordered[:5]:
+                top_values.append({"value": short(value), "count": number})
+
+            mean = None
+            if tally["num_count"] > 0:
+                mean = tally["num_sum"] / tally["num_count"]
+
+            output.append({
+                "column_name": name,
+                "total_count": tally["total_count"],
+                "blank_count": tally["blank_count"],
+                "distinct_count": len(counts),
+                "distinct_truncated": tally["distinct_truncated"],
+                "numeric_min": tally["num_min"],
+                "numeric_max": tally["num_max"],
+                "numeric_mean": mean,
+                "text_min_length": tally["len_min"],
+                "text_max_length": tally["len_max"],
+                "top_values": top_values,
+            })
+        return output
 
 
 # --- the public entry points -----------------------------------------------
@@ -115,6 +261,7 @@ def validate_frames(headers, frames, columns, cross_rules, allow_extra):
         found.add_sample((issue.get("column_name"), "header"), issue)
         found.add_total(issue["severity"], 1)
 
+    stats = StatsCollector()
     unique_state = {}        # column name -> {"seen": set(), "truncated": bool}
     total_rows = 0
     for chunk in frames:
@@ -126,6 +273,8 @@ def validate_frames(headers, frames, columns, cross_rules, allow_extra):
                                    offset, unique_state)
         for rule in cross_rules:
             check_cross_chunk(found, chunk, rule, offset)
+        # Build the statistics profile in the same pass over the data.
+        stats.add_chunk(chunk)
         total_rows += len(chunk)
 
     return {
@@ -134,6 +283,8 @@ def validate_frames(headers, frames, columns, cross_rules, allow_extra):
         "warning_count": found.warning_total,
         "total_rows": total_rows,
         "headers": headers,
+        "column_count": len(headers),
+        "column_stats": stats.results(),
         "notes": found.notes,
     }
 
