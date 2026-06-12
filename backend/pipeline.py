@@ -237,8 +237,17 @@ def complete_run(run_id, profile, file_path, file_name, status,
     action, detail = notification_event(notification)
     log_event(run_id, "Notification", action, detail)
 
-    write_issues(run_id, issues)
-    write_column_stats(run_id, column_stats)
+    # Writing issues/stats must never stop a run from being finalized — if one
+    # of these hiccups the run would otherwise be stuck on "processing" forever.
+    try:
+        write_issues(run_id, issues)
+    except Exception:
+        log.exception("Could not write issues for run %s", run_id)
+    try:
+        write_column_stats(run_id, column_stats)
+    except Exception:
+        log.exception("Could not write column stats for run %s", run_id)
+
     finalize_run(run_id, status, errors, warnings, dest, summary, notification,
                  total_rows, column_count)
     log_event(run_id, "Audit", "Run finalized", f"status={status}, moved to {dest}")

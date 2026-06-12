@@ -266,7 +266,9 @@ def call_claude_cli(settings, system_prompt, user_message):
     if settings["model"]:
         arguments += ["--model", settings["model"]]
 
-    result = subprocess.run(arguments, capture_output=True, text=True, timeout=180)
+    # Hard timeout so a hung CLI (e.g. waiting for a prompt) can't tie up a
+    # worker — on timeout this raises and the run falls back to the template.
+    result = subprocess.run(arguments, capture_output=True, text=True, timeout=60)
     if result.returncode != 0:
         detail = (result.stderr or result.stdout or "").strip() or "the CLI exited with an error"
         raise RuntimeError("Claude CLI error: " + detail[:300])
