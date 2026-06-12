@@ -310,10 +310,17 @@ def run_checks(run_id, profile, file_info, file_path, file_name):
                             "failed", issues, 1, 0, None)
 
     # 3. Validate the file — streamed in chunks so memory stays flat.
+    # When the profile is set to auto-detect, pass no file_type so the validator
+    # picks the format from the file's own extension (CSV/JSON/XML).
+    if profile.get("auto_detect_type"):
+        chosen_type = None
+    else:
+        chosen_type = profile.get("file_type")
+
     try:
         result = validate_file(file_path, columns, cross_rules,
                                profile.get("allow_extra_columns", True), CHUNK_ROWS,
-                               file_type=profile.get("file_type"))
+                               file_type=chosen_type)
     except Exception as error:
         # The file is there but isn't readable in its expected format — quarantine it.
         log.warning("Could not read %s: %s", file_path, error)

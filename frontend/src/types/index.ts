@@ -147,6 +147,8 @@ export interface ValidationProfile {
 
   filePattern: string;
   fileType: "CSV" | "JSON" | "XML";
+  /** When true, the file format is detected from each file's extension. */
+  autoDetectType: boolean;
 
   columns: ProfileColumn[];
   crossColumnRules: CrossColumnRule[];

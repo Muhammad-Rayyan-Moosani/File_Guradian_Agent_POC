@@ -43,6 +43,7 @@ function emptyProfile(): ValidationProfile {
     active: true,
     filePattern: "",
     fileType: "CSV",
+    autoDetectType: false,
     columns: [],
     crossColumnRules: [],
     allowExtraColumns: true,
@@ -373,12 +374,27 @@ export function ProfileEditor() {
                 className={`${inputClass} font-mono`}
               />
             </Field>
-            <Field label="File type">
+            <Field
+              label="File type"
+              hint="Auto detects the format from each file's extension, so one profile can handle CSV, JSON and XML (use a pattern like orders_*)."
+            >
               <select
-                value={profile.fileType}
-                onChange={(e) => patch("fileType", e.target.value as ValidationProfile["fileType"])}
+                value={profile.autoDetectType ? "AUTO" : profile.fileType}
+                onChange={(e) => {
+                  const choice = e.target.value;
+                  if (choice === "AUTO") {
+                    patch("autoDetectType", true);
+                  } else {
+                    setProfile((p) => ({
+                      ...p,
+                      autoDetectType: false,
+                      fileType: choice as ValidationProfile["fileType"],
+                    }));
+                  }
+                }}
                 className={inputClass}
               >
+                <option value="AUTO">Auto (detect by extension)</option>
                 <option value="CSV">CSV</option>
                 <option value="JSON">JSON</option>
                 <option value="XML">XML</option>

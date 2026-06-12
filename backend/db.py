@@ -99,6 +99,9 @@ def init_db():
         "total_rows": "INTEGER",
         "column_count": "INTEGER",
     })
+    ensure_columns("validation_profiles", {
+        "auto_detect_type": "INTEGER NOT NULL DEFAULT 0",
+    })
 
     log.info("Database ready at %s", DB_PATH)
 

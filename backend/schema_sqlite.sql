@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS validation_profiles (
                         CHECK (file_type IN ('CSV', 'JSON', 'XML')),
 
     allow_extra_columns INTEGER NOT NULL DEFAULT 1,
+    -- When 1, the file format is detected from each file's extension (so one
+    -- profile can validate CSV, JSON and XML); when 0, file_type is forced.
+    auto_detect_type    INTEGER NOT NULL DEFAULT 0,
 
     inbound_folder      TEXT NOT NULL,
     success_routing     TEXT NOT NULL,
