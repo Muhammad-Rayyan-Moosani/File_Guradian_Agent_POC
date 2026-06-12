@@ -464,16 +464,83 @@ def read_xml_table(path):
     Returns: a pandas DataFrame.
     """
     root = ET.parse(path).getroot()
+    return xml_root_to_frame(root)
+
+
+def local_tag(tag):
+    """
+    Strip any XML namespace from a tag or attribute name.
+    Real vendor XML often declares a namespace, which makes ElementTree return
+    tags like '{http://company.com}OrderId'; we want the bare 'OrderId' so it
+    still matches the column the profile declares.
+    Parameters: tag (str).
+    Returns: str — the name without the namespace.
+    """
+    if tag and "}" in tag:
+        return tag.split("}", 1)[1]
+    return tag
+
+
+def element_to_row(element):
+    """
+    Turn one record element into a dict of column name -> text value.
+    Both attributes and direct child tags become columns (namespaces stripped).
+    Parameters: element (an ElementTree element).
+    Returns: dict.
+    """
+    row = {}
+    for attr_name, attr_value in element.attrib.items():
+        row[local_tag(attr_name)] = (attr_value or "").strip()
+    for child in element:
+        text = child.text or ""
+        row[local_tag(child.tag)] = text.strip()
+    return row
+
+
+def find_records_parent(root):
+    """
+    Find the element whose children are the records. Usually that is the root
+    (e.g. <orders><order>...), but if the root just wraps a single container
+    (e.g. <response><orders><order>...), step down into that container.
+    Parameters: root (an ElementTree element).
+    Returns: an ElementTree element.
+    """
+    current = root
+    for _ in range(6):                       # safety bound; XML this deep is rare
+        children = list(current)
+        # A lone wrapper child that itself holds elements — go one level deeper.
+        if len(children) == 1 and len(list(children[0])) > 0:
+            current = children[0]
+        else:
+            break
+    return current
+
+
+def xml_root_to_frame(root):
+    """
+    Turn a parsed XML root element into a string DataFrame (one row per record).
+    Copes with namespaces, one wrapper level, and single-record files.
+    Parameters: root (an ElementTree element).
+    Returns: a pandas DataFrame.
+    """
+    parent = find_records_parent(root)
+    candidates = list(parent)
+
+    # If every candidate element is a leaf (has no child elements), they are the
+    # fields of ONE record, not a list of records — so treat the parent itself
+    # as the single record.
+    only_leaves = True
+    for element in candidates:
+        if len(list(element)) > 0:
+            only_leaves = False
+            break
 
     records = []
-    for record_el in list(root):
-        row = {}
-        for attr_name, attr_value in record_el.attrib.items():
-            row[attr_name] = attr_value
-        for child in record_el:
-            text = child.text or ""
-            row[child.tag] = text.strip()
-        records.append(row)
+    if candidates and only_leaves:
+        records.append(element_to_row(parent))
+    else:
+        for element in candidates:
+            records.append(element_to_row(element))
 
     return records_to_frame(records)
 
