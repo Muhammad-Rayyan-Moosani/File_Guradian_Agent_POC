@@ -48,6 +48,10 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 _WIPE_GUARD = "_FILEGUARDIAN_LOG_WIPED"
 
 def _wipe_log_once() -> None:
+    # In the deployed exe, KEEP the log history (it rotates at 5 MB) so problems
+    # can be diagnosed after the fact. Only wipe for a clean slate in dev.
+    if paths.is_frozen():
+        return
     if os.environ.get(_WIPE_GUARD):
         return
     # Don't wipe inside the Flask debug reloader child either.
