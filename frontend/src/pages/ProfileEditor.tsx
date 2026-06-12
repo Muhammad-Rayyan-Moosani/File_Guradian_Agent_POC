@@ -102,6 +102,30 @@ export function ProfileEditor() {
     };
   }, [id, isEditing]);
 
+  // For a NEW profile, pre-fill the destination folders from the global
+  // Settings defaults instead of the placeholder C:\FileGuardian paths.
+  useEffect(() => {
+    if (isEditing) return;
+    let cancelled = false;
+    api
+      .getSettings()
+      .then((s) => {
+        if (cancelled) return;
+        setProfile((p) => ({
+          ...p,
+          successRouting: s.processedFolder || p.successRouting,
+          failureRouting: s.quarantineFolder || p.failureRouting,
+          unknownRouting: s.reviewFolder || p.unknownRouting,
+        }));
+      })
+      .catch(() => {
+        // If settings can't be loaded, keep the existing defaults — never block.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isEditing]);
+
   // ─── handlers ────────────────────────────────────────────────────────
   function patch<K extends keyof ValidationProfile>(
     key: K,
@@ -177,10 +201,17 @@ export function ProfileEditor() {
     setInferring(true);
     try {
       const result = await api.inferFromSample(file, enhanceWithAi);
+      // Derive a subject from the filename (drop the extension and a trailing
+      // _good/_bad/number) so the pattern covers every format, e.g. orders_*.
+      const base = file.name.replace(/\.[^.]+$/, "");
+      const subject = base.replace(/[ _-]?(good|bad|sample|test|\d+)$/i, "") || base;
       setProfile((p) => ({
         ...p,
-        filePattern: p.filePattern || file.name.replace(/[\d_-]+\..+$/, "_*.csv"),
-        name: p.name || file.name.replace(/\.[^.]+$/, ""),
+        filePattern: p.filePattern || subject + "_*",
+        name: p.name || base,
+        // A sample-built profile auto-detects format, so one profile handles
+        // CSV, JSON and XML for this subject.
+        autoDetectType: true,
         columns: result.columns,
       }));
       setAiSuggestedIds(new Set(result.aiSuggestedColumns));
