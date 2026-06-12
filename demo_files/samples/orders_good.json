@@ -1,0 +1,4 @@
+[
+  {"OrderId":"ORD-10001","CustomerEmail":"ops@acme.com","Amount":250.00,"Status":"SHIPPED","OrderDate":"2026-05-01","ShipDate":"2026-05-03"},
+  {"OrderId":"ORD-10002","CustomerEmail":"ap@globex.com","Amount":99.99,"Status":"PENDING","OrderDate":"2026-05-02","ShipDate":"2026-05-04"}
+]

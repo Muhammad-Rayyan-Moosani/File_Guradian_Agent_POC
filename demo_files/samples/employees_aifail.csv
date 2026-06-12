@@ -1,0 +1,4 @@
+EmployeeId,FullName,Email,Department,Salary,StartDate
+12A,Carol White,carol@@corp,Marketing,20000,2026-02-30
+1001,Dan Brown,dan@corp.com,Engineering,900000,2024-05-01
+1001,Eve Black,eve@corp.com,HR,50000,2024-03-01

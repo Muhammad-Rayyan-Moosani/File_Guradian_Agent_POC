@@ -1,0 +1,11 @@
+EmployeeId,FullName,Email,Department,Salary,StartDate
+1001,Alice Smith,alice@corp.com,Engineering,120000,2024-01-15
+1002,Bob Jones,bob@corp.com,Sales,85000,2023-06-01
+1003,Cara Lee,cara@corp.com,Engineering,135000,2022-03-10
+1004,Dev Patel,dev@corp.com,Finance,98000,2024-09-20
+1005,Erin Fox,erin@corp.com,HR,72000,2021-11-05
+1006,Finn Ray,finn@corp.com,Engineering,127000,2023-02-18
+1007,Gita Rao,gita@corp.com,Sales,91000,2024-07-01
+1008,Hugo Kim,hugo@corp.com,Finance,110000,2022-12-12
+1009,Ivy Chen,ivy@corp.com,Engineering,141000,2020-08-30
+1010,Jack Bauer,jack@corp.com,HR,68000,2024-04-22

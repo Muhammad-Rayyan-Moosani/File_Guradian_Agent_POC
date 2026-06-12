@@ -20,6 +20,8 @@ dependency and we avoid bundling any heavy cloud SDK into the Windows build.
 
 import os
 import sys
+import time
+import threading
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -27,6 +29,51 @@ from logging_setup import get_logger  # noqa: E402
 import db  # noqa: E402
 
 log = get_logger("AI")
+
+# --- safety rate cap --------------------------------------------------------
+# Never make more than this many AI calls per rolling 60 seconds. A burst of
+# failing files (or a misconfiguration / loop) therefore can't drain an account
+# — extra calls quietly fall back to the plain template. This protects every
+# provider, and especially the Claude CLI option, which spends your signed-in
+# subscription's 5-hour quota. Override with FG_AI_MAX_CALLS_PER_MIN (0 = off).
+_recent_calls = []
+_calls_lock = threading.Lock()
+
+
+def max_calls_per_min():
+    """
+    Read the per-minute AI call cap from the environment (default 20).
+    Parameters: none.
+    Returns: int (0 or less means the cap is disabled).
+    """
+    raw = os.getenv("FG_AI_MAX_CALLS_PER_MIN")
+    if raw is None or raw.strip() == "":
+        return 20
+    try:
+        return int(raw)
+    except ValueError:
+        return 20
+
+
+def under_rate_cap():
+    """
+    Record one AI call and report whether we are still within the per-minute cap.
+    Parameters: none.
+    Returns: bool — True if the call may proceed, False if the cap is hit.
+    """
+    cap = max_calls_per_min()
+    if cap <= 0:
+        return True
+
+    now = time.time()
+    cutoff = now - 60
+    with _calls_lock:
+        while _recent_calls and _recent_calls[0] < cutoff:
+            _recent_calls.pop(0)
+        if len(_recent_calls) >= cap:
+            return False
+        _recent_calls.append(now)
+        return True
 
 # Sensible default model per provider (used when the settings field is blank).
 DEFAULT_MODELS = {
@@ -120,6 +167,17 @@ def generate(system_prompt, user_message, max_tokens=500, raise_errors=False):
     """
     settings = get_ai_settings()
     if not is_configured(settings):
+        return None
+
+    # Safety cap: refuse to exceed the per-minute call limit so a flood of
+    # files can never drain the account; fall back to the template instead.
+    if not under_rate_cap():
+        log.warning("AI rate cap reached (%d/min) — using the template for this "
+                    "one to protect the account.", max_calls_per_min())
+        if raise_errors:
+            raise RuntimeError(
+                "AI safety cap reached (FG_AI_MAX_CALLS_PER_MIN per minute). "
+                "Wait a moment and try again.")
         return None
 
     provider = settings["provider"]

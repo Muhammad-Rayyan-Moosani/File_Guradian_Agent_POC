@@ -1,0 +1,11 @@
+Sku,ProductName,Category,UnitPrice,SupplierEmail,InStock
+SKU-00001,Widget A,Hardware,12.50,sales@acme.com,true
+SKU-00002,Widget B,Hardware,8.00,sales@acme.com,true
+SKU-00003,Gadget X,Electronics,45.00,info@globex.com,false
+SKU-00004,Gadget Y,Electronics,52.75,info@globex.com,true
+SKU-00005,Folder Pack,Office,3.25,orders@initech.com,true
+SKU-00006,Stapler,Office,6.40,orders@initech.com,false
+SKU-00007,Monitor,Electronics,180.00,info@globex.com,true
+SKU-00008,Bolt Set,Hardware,4.10,sales@acme.com,true
+SKU-00009,Desk Lamp,Office,22.00,orders@initech.com,true
+SKU-00010,Cable,Electronics,9.99,info@globex.com,false

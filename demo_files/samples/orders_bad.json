@@ -1,0 +1,5 @@
+[
+  {"OrderId":"BADID","CustomerEmail":"not-an-email","Amount":-5,"Status":"RETURNED","OrderDate":"2026-05-10","ShipDate":"2026-05-01"},
+  {"OrderId":"ORD-10001","CustomerEmail":"a@z.com","Amount":10,"Status":"SHIPPED","OrderDate":"2026-05-02","ShipDate":"2026-05-05"},
+  {"OrderId":"ORD-10001","CustomerEmail":"b@z.com","Amount":20,"Status":"PENDING","OrderDate":"2026-05-03","ShipDate":"2026-05-06"}
+]

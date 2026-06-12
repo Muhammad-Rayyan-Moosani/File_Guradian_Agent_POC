@@ -1,0 +1,14 @@
+<shipments>
+  <shipment>
+    <TrackingId>TRK-100001</TrackingId>
+    <Carrier>UPS</Carrier>
+    <Weight>12.5</Weight>
+    <Destination>New York</Destination>
+  </shipment>
+  <shipment>
+    <TrackingId>TRK-100002</TrackingId>
+    <Carrier>FEDEX</Carrier>
+    <Weight>3.2</Weight>
+    <Destination>Chicago</Destination>
+  </shipment>
+</shipments>
