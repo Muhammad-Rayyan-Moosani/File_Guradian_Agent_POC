@@ -19,7 +19,9 @@ each type are described in the comments next to each generator below.
 import os
 import csv
 import sys
+import json
 import random
+import xml.etree.ElementTree as ET
 
 # A fixed seed so re-running gives the same data (handy when comparing runs).
 random.seed(42)
@@ -239,6 +241,71 @@ def write_csv(file_name, rows):
     print(f"  wrote {file_name:24} ({len(rows) - 1} rows, {size_kb} KB)")
 
 
+def rows_to_records(rows):
+    """
+    Turn a [header, row, row, ...] table into a list of {column: value} dicts.
+    Parameters: rows (list of lists, header first).
+    Returns: list of dicts.
+    """
+    header = rows[0]
+    records = []
+    for row in rows[1:]:
+        record = {}
+        for index in range(len(header)):
+            record[header[index]] = row[index]
+        records.append(record)
+    return records
+
+
+def write_json(file_name, rows):
+    """
+    Write the rows as a JSON array of objects (one object per record).
+    Parameters: file_name (str), rows (list of lists, header first).
+    Returns: None.
+    """
+    records = rows_to_records(rows)
+    path = os.path.join(OUT_DIR, file_name)
+    with open(path, "w") as handle:
+        json.dump(records, handle, indent=2)
+    size_kb = round(os.path.getsize(path) / 1024)
+    print(f"  wrote {file_name:24} ({len(records)} rows, {size_kb} KB)")
+
+
+def write_xml(file_name, rows, root_tag, record_tag):
+    """
+    Write the rows as XML: a root element with one record element per row.
+    Parameters: file_name (str), rows (list of lists), root_tag (str),
+        record_tag (str).
+    Returns: None.
+    """
+    records = rows_to_records(rows)
+    root = ET.Element(root_tag)
+    for record in records:
+        element = ET.SubElement(root, record_tag)
+        for key, value in record.items():
+            child = ET.SubElement(element, key)
+            child.text = str(value)
+
+    tree = ET.ElementTree(root)
+    ET.indent(tree, space="  ")
+    path = os.path.join(OUT_DIR, file_name)
+    tree.write(path, encoding="utf-8", xml_declaration=True)
+    size_kb = round(os.path.getsize(path) / 1024)
+    print(f"  wrote {file_name:24} ({len(records)} rows, {size_kb} KB)")
+
+
+def write_all_formats(base_name, rows, root_tag, record_tag):
+    """
+    Write the same data as .csv, .json, and .xml so each format can be tested.
+    Parameters: base_name (str, no extension), rows (list of lists),
+        root_tag/record_tag (str, used for the XML structure).
+    Returns: None.
+    """
+    write_csv(base_name + ".csv", rows)
+    write_json(base_name + ".json", rows)
+    write_xml(base_name + ".xml", rows, root_tag, record_tag)
+
+
 def main():
     """
     Generate two good files and one bad file for each of the three types.
@@ -250,24 +317,22 @@ def main():
         count = int(sys.argv[1])
 
     os.makedirs(OUT_DIR, exist_ok=True)
-    print(f"Generating {count} rows per file into {OUT_DIR}\n")
+    print(f"Generating {count} rows per file (CSV + JSON + XML) into {OUT_DIR}\n")
 
     print("Payroll:")
-    write_csv("payroll_good_1.csv", payroll_rows(count, bad=False))
-    write_csv("payroll_good_2.csv", payroll_rows(count, bad=False))
-    write_csv("payroll_bad.csv", payroll_rows(count, bad=True))
+    write_all_formats("payroll_good", payroll_rows(count, bad=False), "payroll", "employee")
+    write_all_formats("payroll_bad", payroll_rows(count, bad=True), "payroll", "employee")
 
     print("Timesheet:")
-    write_csv("timesheet_good_1.csv", timesheet_rows(count, bad=False))
-    write_csv("timesheet_good_2.csv", timesheet_rows(count, bad=False))
-    write_csv("timesheet_bad.csv", timesheet_rows(count, bad=True))
+    write_all_formats("timesheet_good", timesheet_rows(count, bad=False), "timesheet", "entry")
+    write_all_formats("timesheet_bad", timesheet_rows(count, bad=True), "timesheet", "entry")
 
     print("Sales orders:")
-    write_csv("orders_good_1.csv", orders_rows(count, bad=False))
-    write_csv("orders_good_2.csv", orders_rows(count, bad=False))
-    write_csv("orders_bad.csv", orders_rows(count, bad=True))
+    write_all_formats("orders_good", orders_rows(count, bad=False), "orders", "order")
+    write_all_formats("orders_bad", orders_rows(count, bad=True), "orders", "order")
 
     print("\nDone. Files are in:", OUT_DIR)
+    print("Each comes in three formats (.csv, .json, .xml) for the same data.")
 
 
 if __name__ == "__main__":
